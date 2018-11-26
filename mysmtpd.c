@@ -8,15 +8,17 @@
 #include <unistd.h>
 #include <sys/utsname.h>
 #include <ctype.h>
+#include <string.h>
+#include <fcntl.h>
 
 #define MAX_LINE_LENGTH 1024
 
 static void handle_client(int fd);
-static struct smtp_session* handle_incoming_message(int fd, struct smtp_session* session, char *buffer);
-static struct smtp_session* handle_state_zero(int fd, struct smtp_session* session, char* buffer);
-static struct smtp_session* handle_state_one(int fd, struct smtp_session* session, char* buffer);
-static struct smtp_session* handle_state_two(int fd, struct smtp_session* session, char* buffer);
-static struct smtp_session* handle_state_three(int fd, struct smtp_session* session, char* buffer);
+void  handle_incoming_message(int fd, struct smtp_session* session, char *buffer);
+void  handle_state_zero(int fd, struct smtp_session* session, char* buffer);
+void handle_state_one(int fd, struct smtp_session* session, char* buffer);
+void handle_state_two(int fd, struct smtp_session* session, char* buffer);
+void handle_state_three(int fd, struct smtp_session* session, char* buffer);
 
 int main(int argc, char *argv[]) {
   
@@ -40,11 +42,11 @@ void handle_client(int fd) {
         send_string(fd, "state is: %d\n", session->state);
         char out[1025];
         nb_read_line(buffer, out);
-        session = handle_incoming_message(fd, session, out);
+        handle_incoming_message(fd, session, out);
     }
 }
 
-struct smtp_session* handle_incoming_message(int fd, struct smtp_session* session, char *buffer){
+void handle_incoming_message(int fd, struct smtp_session* session, char *buffer){
     switch(session->state) {
         case 0:
             //initialization state
@@ -60,7 +62,7 @@ struct smtp_session* handle_incoming_message(int fd, struct smtp_session* sessio
             break;
         case 3:
             //Client has specified recipeint, expecting DATA now
-//            handle_state_three(fd, state, buffer);
+            handle_state_three(fd, session, buffer);
             break;
         case 4:
             //Client is sending that sweet sweet data
@@ -74,10 +76,9 @@ struct smtp_session* handle_incoming_message(int fd, struct smtp_session* sessio
             send_string(fd, "Went to default case in handle_incoming_message");
             break;
     }
-    return session;
 }
 
-struct smtp_session* handle_state_zero(int fd, struct smtp_session* session, char* buffer) {
+void handle_state_zero(int fd, struct smtp_session* session, char* buffer) {
     char* code = strtok(buffer, " \n");           //Gets the code submitted by the client ex: HELO, MAIL ect...
     if(strcmp(code, "EHLO") == 0 || strcmp(code,"HELO") == 0){
         char* domainName = strtok(NULL, " ");
@@ -109,10 +110,9 @@ struct smtp_session* handle_state_zero(int fd, struct smtp_session* session, cha
     } else {
         send_string(fd, "500-Invalid Syntax");
     }
-    return session;
 }
 
-struct smtp_session* handle_state_one(int fd, struct smtp_session* session, char* buffer){
+void handle_state_one(int fd, struct smtp_session* session, char* buffer){
     char* code = strtok(buffer, " \n");           //Gets the code submitted by the client ex: HELO, MAIL ect...
 
     if(strcmp(code, "EHLO") == 0 || strcmp(code,"HELO") == 0){
@@ -144,10 +144,9 @@ struct smtp_session* handle_state_one(int fd, struct smtp_session* session, char
     } else {
         send_string(fd, "500-Invalid Syntax");
     }
-    return session;
 }
 
-struct smtp_session* handle_state_two(int fd, struct smtp_session* session, char* buffer) {
+void handle_state_two(int fd, struct smtp_session* session, char* buffer) {
     send_string(fd, "In state two\n");
     char *code = strtok(buffer, " \n");           //Gets the code submitted by the client ex: HELO, MAIL ect...
     send_string(fd, "Code is: %s\n", code);
@@ -162,7 +161,8 @@ struct smtp_session* handle_state_two(int fd, struct smtp_session* session, char
         } else {
             char *recipient = strtok(NULL, ">");
             if(is_valid_user(recipient,NULL) > 0){
-                session = addRecipient(session, recipient);
+                addRecipient(session, recipient);
+                send_string(fd, "did it update userList: %d\n", session->recipientNum);
                 send_string(fd, "250 OK\n");
             } else {
                 send_string(fd, "550 No such user here\n");
@@ -171,6 +171,10 @@ struct smtp_session* handle_state_two(int fd, struct smtp_session* session, char
     } else if (strcmp(code, "DATA") == 0) {
         //if(session->recipients == 0){//TODO}
         session->state++;
+        char *template = strcat(session->sender, "XXXXXX");
+        session->tempFileFD = mkstemp(template);
+        session->tempFileName = template;
+        send_string(fd, "template: %s\n", template);
         send_string(fd, "354 Start mail input; end with <CRLF>.<CRLF>\n");
     } else if (strcmp(code, "QUIT") == 0) {
 
@@ -187,49 +191,17 @@ struct smtp_session* handle_state_two(int fd, struct smtp_session* session, char
     } else {
         send_string(fd, "500-Invalid Syntax");
     }
-    return session;
 }
 
-static struct smtp_session* handle_state_three(int fd, struct smtp_session* session, char* buffer){
-    send_string(fd, "In state two\n");
-    char *code = strtok(buffer, " \n");           //Gets the code submitted by the client ex: HELO, MAIL ect...
-    send_string(fd, "Code is: %s\n", code);
-
-    if (strcmp(code, "EHLO") == 0 || strcmp(code, "HELO") == 0) {
-    } else if (strcmp(code, "MAIL") == 0) {
-
-    } else if (strcmp(code, "RCPT") == 0) {
-        send_string(fd, "In the if for RCPT\n");
-        if (strcmp(strtok(NULL, "<"), "TO:") != 0) {
-            send_string(fd, "500-Invalid Syntax");
-        } else {
-            char *recipient = strtok(NULL, ">");
-            if(is_valid_user(recipient,NULL) > 0){
-                session = addRecipient(session, recipient, fd);
-                send_string(fd, "250 OK\n");
-            } else {
-                send_string(fd, "550 No such user here\n");
-            }
-        }
-    } else if (strcmp(code, "DATA") == 0) {
-        //if(session->recipients == 0){//TODO}
+void handle_state_three(int fd, struct smtp_session* session, char* buffer) {
+    //Data collection state
+    if(strcmp(buffer, ".\n") == 0){
+        send_string(fd, "got terminating character in data read phase\n");
+        char tempFilePath[MAX_LINE_LENGTH];
+        save_user_mail(session->tempFileName, session->recipients);
         session->state++;
-        send_string(fd, "354 Start mail input; end with <CRLF>.<CRLF>\n");
-    } else if (strcmp(code, "QUIT") == 0) {
-
-    } else if (strcmp(code, "NOOP") == 0) {
-
-    } else if (strcmp(code, "RSET") == 0) {
-        send_string(fd, "502-Command not Implemented");
-    } else if (strcmp(code, "VRFY") == 0) {
-        send_string(fd, "502-Command not Implemented");
-    } else if (strcmp(code, "EXPN") == 0) {
-        send_string(fd, "502-Command not Implemented");
-    } else if (strcmp(code, "HELP") == 0) {
-        send_string(fd, "502-Command not Implemented");
     } else {
-        send_string(fd, "500-Invalid Syntax");
+        write(session->tempFileFD, buffer, strlen(buffer));
     }
-    return session;
 }
 

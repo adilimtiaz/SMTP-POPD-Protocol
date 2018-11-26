@@ -6,13 +6,16 @@
 #define _SMTP_SESSION_H_
 
 #include <string.h>
+#include "mailuser.h"
 
 struct smtp_session {
     int state;
     char* senderDomainName;
     char* sender;
     int recipientNum;
-    char* recipients[0];
+    int tempFileFD;
+    char* tempFileName;
+    user_list_t recipients;
 };
 
 struct smtp_session* smtp_session_create();
