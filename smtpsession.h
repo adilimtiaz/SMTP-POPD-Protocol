@@ -14,8 +14,8 @@ struct smtp_session {
     char* sender;
     int recipientNum;
     int tempFileFD;
-    char* tempFileName;
     user_list_t recipients;
+    char tempFileName[13];
 };
 
 struct smtp_session* smtp_session_create();

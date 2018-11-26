@@ -14,8 +14,8 @@
 #define MAX_LINE_LENGTH 1024
 
 static void handle_client(int fd);
-void  handle_incoming_message(int fd, struct smtp_session* session, char *buffer);
-void  handle_state_zero(int fd, struct smtp_session* session, char* buffer);
+void handle_incoming_message(int fd, struct smtp_session* session, char *buffer);
+void handle_state_zero(int fd, struct smtp_session* session, char* buffer);
 void handle_state_one(int fd, struct smtp_session* session, char* buffer);
 void handle_state_two(int fd, struct smtp_session* session, char* buffer);
 void handle_state_three(int fd, struct smtp_session* session, char* buffer);
@@ -171,10 +171,9 @@ void handle_state_two(int fd, struct smtp_session* session, char* buffer) {
     } else if (strcmp(code, "DATA") == 0) {
         //if(session->recipients == 0){//TODO}
         session->state++;
-        char *template = strcat(session->sender, "XXXXXX");
-        session->tempFileFD = mkstemp(template);
-        session->tempFileName = template;
-        send_string(fd, "template: %s\n", template);
+        send_string(fd, "%s\n", session->tempFileName);
+        session->tempFileFD = mkstemp(session->tempFileName);
+        send_string(fd, "session template: %s\n", session->tempFileName);
         send_string(fd, "354 Start mail input; end with <CRLF>.<CRLF>\n");
     } else if (strcmp(code, "QUIT") == 0) {
 
@@ -197,8 +196,10 @@ void handle_state_three(int fd, struct smtp_session* session, char* buffer) {
     //Data collection state
     if(strcmp(buffer, ".\n") == 0){
         send_string(fd, "got terminating character in data read phase\n");
-        char tempFilePath[MAX_LINE_LENGTH];
+        send_string(fd, "the tempFIleName in the session is: %s\n", session->tempFileName);
         save_user_mail(session->tempFileName, session->recipients);
+        close(session->tempFileFD);
+        unlink(session->tempFileName);
         session->state++;
     } else {
         write(session->tempFileFD, buffer, strlen(buffer));
