@@ -162,7 +162,7 @@ struct smtp_session* handle_state_two(int fd, struct smtp_session* session, char
         } else {
             char *recipient = strtok(NULL, ">");
             if(is_valid_user(recipient,NULL) > 0){
-                session = addRecipient(session, recipient, fd);
+                session = addRecipient(session, recipient);
                 send_string(fd, "250 OK\n");
             } else {
                 send_string(fd, "550 No such user here\n");

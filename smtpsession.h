@@ -16,7 +16,7 @@ struct smtp_session {
 };
 
 struct smtp_session* smtp_session_create();
-struct smtp_session * addRecipient(struct smtp_session* session, char* recipient, int fd);
+struct smtp_session * addRecipient(struct smtp_session* session, char* recipient);
 
 #endif
 
