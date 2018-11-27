@@ -35,4 +35,4 @@ add_executable(mypopd
         netbuffer.c
         netbuffer.h
         server.c
-        server.h smtpsession.c smtpsession.h)
+        server.h smtpsession.c smtpsession.h popsession.c popsession.h)

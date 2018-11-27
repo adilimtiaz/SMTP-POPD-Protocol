@@ -178,7 +178,7 @@ void handle_state_two(int fd, struct smtp_session* session, char* buffer) {
         }
     } else if (strcmp(code, "DATA") == 0) {
         if (session->recipients == 0) {
-            send_string(fd, "503 Bad Sequence of Commands\n");
+            send_string(fd, "554 No valid recipients\n");
         }
         else{
             session->state++;
