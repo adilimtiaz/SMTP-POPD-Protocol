@@ -21,6 +21,8 @@ void handle_state_two(int fd, struct smtp_session* session, char* buffer);
 void handle_state_three(int fd, struct smtp_session* session, char* buffer);
 void handle_state_four(int fd, struct smtp_session* session, char* buffer);
 
+char file_name_template[] = "./mail.XXXXXX";
+
 int main(int argc, char *argv[]) {
   
   if (argc != 2) {
@@ -45,7 +47,8 @@ void handle_client(int fd) {
         nb_read_line(buffer, out);
         handle_incoming_message(fd, session, out);
     }
-    send_string(fd, "out of the while loop\n");
+    close(session->tempFileFD);
+    unlink(session->tempFileName);
     close(fd);
     destroy_user_list(session->recipients);
     free(session);
@@ -221,6 +224,10 @@ void handle_state_four(int fd, struct smtp_session* session, char* buffer) {
         send_string(fd, "503 Bad Sequence of Commands\n");
     } else if (strcmp(code, "MAIL") == 0) {
         session->state = 1;
+        destroy_user_list(session->recipients);
+        session->recipients = create_user_list();
+        session->recipientNum = 0;
+        strncpy(session->tempFileName, file_name_template, strlen(file_name_template));    //reset value back to end with .XXXXXX
         handle_state_one(fd, session, copyBuff);
     } else if (strcmp(code, "RCPT") == 0) {
         send_string(fd, "503 Bad Sequence of Commands\n");
