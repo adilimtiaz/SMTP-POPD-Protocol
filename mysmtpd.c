@@ -126,14 +126,20 @@ void handle_state_one(int fd, struct smtp_session* session, char* buffer){
     if(strcasecmp(code,"HELO") == 0){
         send_string(fd, "503 Bad Sequence of Commands\n");
     } else if(strcasecmp(code,"MAIL") == 0){
-        send_string(fd, "in MAIL ifstatement\n");
-        if(strcasecmp(strtok(NULL, "<"), "FROM:") != 0){
-            send_string(fd, "500-Invalid Syntax\n");
+        if((strchr(buffer, "<") != NULL) && (strchr(buffer, ">") != NULL)){
+            code = strtok(NULL, "<");
+            if(strcasecmp(code, "FROM:") != 0){
+                send_string(fd, "500-Invalid Syntax\n");
+            } else {
+                char *recipient = strtok(NULL, ">");
+                send_string(fd, "recipient at line 131: %s \n", recipient);
+                session->sender = recipient;
+                send_string(fd, "250 OK\n");
+                session->state = 2;
+            }
         } else {
-            char *recipient = strtok(NULL, ">");
-            session->sender = recipient;
-            send_string(fd, "250 OK\n");
-            session->state = 2;
+            // Mail provided without proper <Address>
+            send_string(fd, "500-Invalid Syntax\n");
         }
     } else if(strcasecmp(code, "RCPT") == 0){
         send_string(fd, "503 Bad Sequence of Commands\n");
