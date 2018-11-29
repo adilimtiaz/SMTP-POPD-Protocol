@@ -21,24 +21,25 @@ void handle_dele_command(int fd, struct pop_session* session, char* dele_index);
 void print_all_messages(int fd, mail_list_t messages);
 void handle_rset_command(int fd, struct pop_session* session);
 void handle_quit_command(int fd, struct pop_session* session);
+void handle_retr_command(int fd, struct pop_session* session, char* mail_index);
+void read_mail_file(int fd, struct pop_session* session, const char* file_name);
 
 int main(int argc, char *argv[]) {
-  
-  if (argc != 2) {
-    fprintf(stderr, "Invalid arguments. Expected: %s <port>\n", argv[0]);
-    return 1;
-  }
-  
-  run_server(argv[1], handle_client);
-  
-  return 0;
+
+    if (argc != 2) {
+        fprintf(stderr, "Invalid arguments. Expected: %s <port>\n", argv[0]);
+        return 1;
+    }
+
+    run_server(argv[1], handle_client);
+
+    return 0;
 }
 
 void handle_client(int fd) {
     struct pop_session* session = pop_session_create();
     send_string(fd, "+OK POP3 server\n");
     net_buffer_t buffer = nb_create(fd, 10000);
-
     while(session->has_quit == 0){
         char out[MAX_LINE_LENGTH];
         nb_read_line(buffer, out);
@@ -49,7 +50,6 @@ void handle_client(int fd) {
 
 void handle_message(int fd, struct pop_session* session, char* buffer){
     char* command = strtok(buffer, " \n");
-
     if(strcasecmp(command, "USER") == 0){
         char* user_name = strtok(NULL, " \n");
         handle_user_command(fd, session, user_name);
@@ -57,7 +57,6 @@ void handle_message(int fd, struct pop_session* session, char* buffer){
         char* password = strtok(NULL, " \n");
         handle_pass_command(fd, session, password);
     } else if(strcasecmp(command, "STAT") == 0){
-        //only if authorized
         if(session->is_authenticated > 0){
             handle_stat_command(fd, session);
         } else {
@@ -71,7 +70,12 @@ void handle_message(int fd, struct pop_session* session, char* buffer){
             send_string(fd, "-ERR must be authenticated to use LIST command\n");
         }
     } else if(strcasecmp(command, "RETR") == 0){
-
+        if(session->is_authenticated > 0) {
+            char * mail_index = strtok(NULL, " \n");
+            handle_retr_command(fd, session, mail_index);
+        } else {
+            send_string(fd, "-ERR must be authenticated to use RETR command\n");
+        }
     }else if(strcasecmp(command, "DELE") == 0){
         if(session->is_authenticated > 0){
             char* dele_index = strtok(NULL, " \n");
@@ -81,7 +85,7 @@ void handle_message(int fd, struct pop_session* session, char* buffer){
         }
     }else if(strcasecmp(command, "NOOP") == 0){
         if(session->is_authenticated){
-            send_string(fd,"+OK");
+            send_string(fd,"+OK\n");
         } else {
             send_string(fd, "-ERR must be authenticated to use NOOP command\n");
         }
@@ -89,7 +93,7 @@ void handle_message(int fd, struct pop_session* session, char* buffer){
         if(session->is_authenticated > 0){
             handle_rset_command(fd, session);
         } else {
-            send_string(fd, "-ERR must be authenticated to use NOOP command\n");
+            send_string(fd, "-ERR must be authenticated to use RSET command\n");
         }
     }else if(strcasecmp(command, "QUIT") == 0){
         handle_quit_command(fd, session);
@@ -99,31 +103,39 @@ void handle_message(int fd, struct pop_session* session, char* buffer){
 }
 
 void handle_user_command(int fd, struct pop_session* session, char* username) {
-    if(username == NULL){
-        send_string(fd, "-ERR no username supplied\n");
+    if(session->is_authenticated > 0){
+        send_string(fd, "-ERR already logged in, please quit before issuing USER command\n");
     } else {
-        if (is_valid_user(username, NULL)) {
-            session->username = strdup(username);       //use strdup to avoid rewriting of these variables when using strtok
-            send_string(fd, "+OK valid username: %s \n", username);
+        if (username == NULL) {
+            send_string(fd, "-ERR no username supplied\n");
         } else {
-            send_string(fd, "-ERR invalid username\n");
+            if (is_valid_user(username, NULL)) {
+                session->username = strdup(
+                        username);       //use strdup to avoid rewriting of these variables when using strtok
+                send_string(fd, "+OK valid username: %s \n", username);
+            } else {
+                send_string(fd, "-ERR invalid username\n");
+            }
         }
     }
 }
 
-void handle_pass_command(int fd, struct pop_session* session, char* password){
-    send_string(fd, "in handle_pass_command, password is : %s\n", password);
-    if(password == NULL){
-        send_string(fd, "-ERR no password supplied\n");
-    } else if(session->username == NULL) {
-        send_string(fd, "-ERR please specify a valid username first\n");
+void handle_pass_command(int fd, struct pop_session* session, char* password) {
+    if (session->is_authenticated > 0) {
+        send_string(fd, "-ERR already logged in, please quit before issuing PASS command\n");
     } else {
-        if(is_valid_user(session->username, password) > 0){
-            session->is_authenticated = 1;
-            session->messages = load_user_mail(session->username);
-            send_string(fd, "+OK success, logged in as %s\n", session->username);
+        if (session->username == NULL) {
+            send_string(fd, "-ERR please specify a valid username first\n");
+        } else if (password == NULL) {
+            send_string(fd, "-ERR no password supplied\n");
         } else {
-            send_string(fd, "-ERR invalid password\n");
+            if (is_valid_user(session->username, password) > 0) {
+                session->is_authenticated = 1;
+                session->messages = load_user_mail(session->username);
+                send_string(fd, "+OK success, logged in as %s\n", session->username);
+            } else {
+                send_string(fd, "-ERR invalid password\n");
+            }
         }
     }
 }
@@ -146,7 +158,7 @@ void handle_list_command(int fd, struct pop_session* session, char* mail_index){
         } else {
             mail_item_t mail_item = get_mail_item(session->messages, (unsigned int)mail_index_int);
             if(mail_item){
-                send_string(fd, "%d %d\n", mail_index_int + 1, (int)get_mail_item_size(mail_item));
+                send_string(fd, "+OK %d %d\n", mail_index_int + 1, (int)get_mail_item_size(mail_item));
             } else {
                 send_string(fd, "-ERR no such item\n");
             }
@@ -166,6 +178,7 @@ void print_all_messages(int fd, mail_list_t messages){
         }
         current_index++;
     }
+    send_string(fd, ".\n");
 }
 
 void handle_dele_command(int fd, struct pop_session* session, char* dele_index){
@@ -190,7 +203,9 @@ void handle_dele_command(int fd, struct pop_session* session, char* dele_index){
 
 void handle_rset_command(int fd, struct pop_session* session){
     reset_mail_list_deleted_flag(session->messages);
-    send_string(fd, "+OK maildrop has %d messages (%x octets)\n", get_mail_count(session->messages), (int)get_mail_list_size(session->messages));
+    send_string(fd, "+OK maildrop has %d messages (%d octets)\n",
+                get_mail_count(session->messages),
+                (int)get_mail_list_size(session->messages));
 }
 
 void handle_quit_command(int fd, struct pop_session* session){
@@ -199,4 +214,42 @@ void handle_quit_command(int fd, struct pop_session* session){
     }
     session->has_quit = 1;
     send_string(fd, "+OK pop server signing off\n");
+}
+
+void handle_retr_command(int fd, struct pop_session* session, char* mail_index){
+    if(mail_index == NULL){
+        send_string(fd, "-ERR no mail index supplied to retrieve\n");
+    } else {
+        int retr_index_int = atoi(mail_index) - 1;  //subtract 1 to use 0 based indexing
+        if(retr_index_int + 1 <= 0){
+            send_string(fd, "-ERR mail index must be greater than 0\n");
+        } else {
+            mail_item_t mail_item = get_mail_item(session->messages, (unsigned int)retr_index_int);
+            if(!mail_item) {
+                send_string(fd, "-ERR no such item\n");
+            } else {
+                const char* file_name = get_mail_item_filename(mail_item);
+                send_string(fd, "+OK %d octets", (int)get_mail_item_size(mail_item));
+                read_mail_file(fd, session, file_name);
+            }
+        }
+    }
+}
+
+void read_mail_file(int fd, struct pop_session* session, const char* file_name){
+    //SRC: https://stackoverflow.com/questions/3463426/in-c-how-should-i-read-a-text-file-and-print-all-strings
+    char * buf = malloc(MAX_LINE_LENGTH);
+    FILE *file;
+    size_t nread;
+    file = fopen(file_name, "r");
+    if(file) {
+        while((nread = fread(buf, 1, sizeof(buf), file)) > 0){
+            send_string(fd, buf);
+        }
+        if(ferror(file)){
+            send_string(fd, "-ERR error reading mail file\n");
+        }
+    }
+    fclose(file);
+    send_string(fd, "\n.\n");
 }
