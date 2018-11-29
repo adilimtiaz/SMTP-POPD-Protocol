@@ -13,7 +13,6 @@ struct pop_session {
     int is_authenticated;
     int has_quit;
     char* username;
-    char* password;
     mail_list_t messages;
 };
 

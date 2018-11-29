@@ -10,7 +10,6 @@ struct pop_session * pop_session_create(){
     session->has_quit = 0;
     session->is_authenticated = 0;
     session->username = NULL;
-    session->password = NULL;
     session->messages = NULL;
     return session;
 }

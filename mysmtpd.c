@@ -172,8 +172,8 @@ void handle_state_two(int fd, struct smtp_session* session, char* buffer) {
         send_string(fd, "503 Bad Sequence of Commands\n");
     } else if (strcasecmp(code, "RCPT") == 0) {
         if (strcasecmp(strtok(NULL, "<"), "TO:") != 0) {
-            send_string(fd, "500-Invalid Syntax");
-        } else {
+                send_string(fd, "500-Invalid Syntax");
+            } else {
             char *recipient = strtok(NULL, ">");
             if (is_valid_user(recipient, NULL) > 0) {
                 addRecipient(session, recipient);
