@@ -85,80 +85,166 @@ void handle_incoming_message(int fd, struct smtp_session* session, char *buffer)
 }
 
 void handle_state_zero(int fd, struct smtp_session* session, char* buffer) {
-    char* code = strtok(buffer, " \n");           //Gets the code submitted by the client ex: HELO, MAIL ect...
-    if(strcasecmp(code,"HELO") == 0){
-        char* domainName = strtok(NULL, " ");
-        if(strtok(NULL, " ") != NULL) { //indicates that there is extra text after the domain name
-            send_string(fd, "500-Invalid Syntax\n");
+    if(strncasecmp(buffer,"HELO ", 5) == 0){
+        // TODO FIX BUG WHERE YOU CAN HELO NOONE. I.E. COMMAND IS HELO .
+        char* word = strtok(buffer, " "); // Ignore first word
+        send_string(fd, "Word is %s", word);
+        char* domainName = strtok(NULL, " "); // Domain name is second word
+        send_string(fd, "Word is %s", domainName);
+        send_string(fd, "bird is %s", strtok(NULL, " "));
+        if(domainName == NULL) { //indicates no domain provided
+            send_string(fd, "500-Invalid Syntax No Domain Name provided\n");
         } else {
+            struct utsname system;
+            if(uname(&system) != 0){
+                // TODO figure out what error code should be
+                send_string(fd, "Bad uname bro");
+            }
             session->senderDomainName = domainName;
             session->state = 1; //transition to next state
-            send_string(fd, "250-foo.com greets %s", domainName);
+            send_string(fd, "%s greets %s", system.sysname, domainName);
         }
-    } else if(strcasecmp(code,"MAIL") == 0){
+    } else if(strcasecmp(buffer,"MAIL") == 0){
         send_string(fd, "503 Bad Sequence of Commands\n");
-    } else if(strcasecmp(code, "RCPT") == 0){
+    } else if(strcasecmp(buffer, "RCPT") == 0){
         send_string(fd, "503 Bad Sequence of Commands\n");
-    } else if(strcasecmp(code, "DATA") == 0){
+    } else if(strcasecmp(buffer, "DATA") == 0){
         send_string(fd, "503 Bad Sequence of Commands\n");
-    } else if(strcasecmp(code, "QUIT") == 0){
+    } else if(strcasecmp(buffer, "QUIT") == 0){
         session->state = -1;
         send_string(fd, "221 OK\n");
-    } else if(strcasecmp(code, "NOOP") == 0){
+    } else if(strcasecmp(buffer, "NOOP") == 0){
         send_string(fd, "250 OK\n");
-    } else if(strcasecmp(code, "RSET") == 0){
+    } else if(strcasecmp(buffer, "RSET") == 0){
         send_string(fd, "502-Command not Implemented\n");
-    } else if(strcasecmp(code, "VRFY") == 0){
+    } else if(strcasecmp(buffer, "VRFY") == 0){
         send_string(fd, "502-Command not Implemented\n");
-    } else if(strcasecmp(code, "EXPN") == 0){
+    } else if(strcasecmp(buffer, "EXPN") == 0){
         send_string(fd, "502-Command not Implemented\n");
-    } else if(strcasecmp(code, "HELP") == 0){
+    } else if(strcasecmp(buffer, "HELP") == 0){
         send_string(fd,"502-Command not Implemented\n");
-    } else if(strcasecmp(code, "EHLO") == 0) {
+    } else if(strcasecmp(buffer, "EHLO") == 0) {
         send_string(fd,"502-Command not Implemented\n");
     }else {
-        send_string(fd, "500-Invalid Syntax\n");
+        send_string(fd, "500-Invalid Syntax Coming From Here\n");
     }
 }
 
+// Taken from: https://stackoverflow.com/questions/122616/how-do-i-trim-leading-trailing-whitespace-in-a-standard-way
+// Note: This function removes all LEADING and TRAILING whitespaces, newlines etc. from a string.
+char* trimwhitespace(char *str)
+{
+    char *end;
+
+    // Trim leading space
+    while(isspace((unsigned char)*str)) str++;
+
+    if(*str == 0)  // All spaces?
+        return str;
+
+    // Trim trailing space
+    end = str + strlen(str) - 1;
+    while(end > str && isspace((unsigned char)*end)) end--;
+
+    // Write new null terminator character
+    end[1] = '\0';
+
+    return str;
+}
+
+// Cuts trailing whitespace and then checks if a newline char is present at the end of the line.
+// If anything else is present in str, then it will return false
+// Modifies input String
+int isLineEndingValid(char *str){
+    if(str == NULL){
+        // No newline
+        return 0;
+    }
+
+    str = trimwhitespace(str);
+    return strlen(str) > 0 ? 0 : 1;
+}
+
+// Adapted from: https://cboard.cprogramming.com/c-programming/81565-substr.html
+/*  substr("some string", 5, 0, NULL)
+    returns "string"
+    substr("some string", -5, 3, NULL)
+    returns "str"
+    substr("some string", 4, 0, "thing")
+    returns "something"
+ *
+ */
+
+char* substr (const char* string, int pos, int len)
+{
+    char* substring;
+    int   i;
+    int   length;
+
+    if (string == NULL)
+        return NULL;
+    length = strlen(string);
+    if (pos < 0) {
+        pos = length + pos;
+        if (pos < 0) pos = 0;
+    }
+    else if (pos > length) pos = length;
+    if (len <= 0) {
+        len = length - pos + len;
+        if (len < 0) len = length - pos;
+    }
+    if (pos + len > length) len = length - pos;
+
+    if ((substring = malloc(sizeof(*substring)*(len+1))) == NULL)
+        return NULL;
+    len += pos;
+    for (i = 0; pos != len; i++, pos++)
+        substring[i] = string[pos];
+    substring[i] = '\0';
+
+    return substring;
+}
+
 void handle_state_one(int fd, struct smtp_session* session, char* buffer){
-    char* code = strtok(buffer, " \n");           //Gets the code submitted by the client ex: HELO, MAIL ect...
-    if(strcasecmp(code,"HELO") == 0){
+    if(strcasecmp(buffer,"HELO") == 0){
         send_string(fd, "503 Bad Sequence of Commands\n");
-    } else if(strcasecmp(code,"MAIL") == 0){
-        if((strchr(buffer, "<") != NULL) && (strchr(buffer, ">") != NULL)){
-            code = strtok(NULL, "<");
-            if(strcasecmp(code, "FROM:") != 0){
-                send_string(fd, "500-Invalid Syntax\n");
-            } else {
-                char *recipient = strtok(NULL, ">");
-                send_string(fd, "recipient at line 131: %s \n", recipient);
+    } else if(strncasecmp(buffer,"MAIL FROM:<", 10) == 0){
+        // 62 is '>'
+        if(strchr(buffer, 62) != NULL){
+            char* bufCopy = strdup(buffer);
+            strtok(bufCopy, "<");
+            char* recipient = strtok(NULL, ">");
+            char* strInlcudingRightArrow = strchr(buffer, 62);
+            char* strAfterRightArrow = substr(strInlcudingRightArrow, 1, 0); //
+            if(isLineEndingValid(strAfterRightArrow) == 1){
                 session->sender = recipient;
                 send_string(fd, "250 OK\n");
                 session->state = 2;
             }
+            else
+                send_string(fd, "500-Invalid Syntax: Extra characters found after recipient mail\n");
         } else {
             // Mail provided without proper <Address>
-            send_string(fd, "500-Invalid Syntax\n");
+            send_string(fd, "500-Invalid Syntax: <Address> not formatted correctly\n");
         }
-    } else if(strcasecmp(code, "RCPT") == 0){
+    } else if(strcasecmp(buffer, "RCPT") == 0){
         send_string(fd, "503 Bad Sequence of Commands\n");
-    } else if(strcasecmp(code, "DATA") == 0){
+    } else if(strcasecmp(buffer, "DATA") == 0){
         send_string(fd, "503 Bad Sequence of Commands\n");
-    } else if(strcasecmp(code, "QUIT") == 0){
+    } else if(strcasecmp(buffer, "QUIT") == 0){
         session->state = -1;
         send_string(fd, "221 OK\n");
-    } else if(strcasecmp(code, "NOOP") == 0){
+    } else if(strcasecmp(buffer, "NOOP") == 0){
         send_string(fd, "250 OK\n");
-    } else if(strcasecmp(code, "RSET") == 0){
+    } else if(strcasecmp(buffer, "RSET") == 0){
         send_string(fd, "502-Command not Implemented\n");
-    } else if(strcasecmp(code, "VRFY") == 0){
+    } else if(strcasecmp(buffer, "VRFY") == 0){
         send_string(fd, "502-Command not Implemented\n");
-    } else if(strcasecmp(code, "EXPN") == 0){
+    } else if(strcasecmp(buffer, "EXPN") == 0){
         send_string(fd, "502-Command not Implemented\n");
-    } else if(strcasecmp(code, "HELP") == 0){
+    } else if(strcasecmp(buffer, "HELP") == 0){
         send_string(fd, "502-Command not Implemented\n");
-    } else if(strcasecmp(code, "EHLO") == 0) {
+    } else if(strcasecmp(buffer, "EHLO") == 0) {
         send_string(fd,"502-Command not Implemented\n");
     } else {
         send_string(fd, "500-Invalid Syntax\n");
