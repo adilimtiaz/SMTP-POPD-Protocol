@@ -244,10 +244,10 @@ void read_mail_file(int fd, struct pop_session* session, const char* file_name){
     file = fopen(file_name, "r");
     if(file) {
         while((nread = fread(buf, 1, sizeof(buf), file)) > 0){
-            send_string(fd, buf);
+            send_all(fd, buf, nread);
         }
         if(ferror(file)){
-            send_string(fd, "-ERR error reading mail file\n");
+            send_all(fd, buf, sizeof(buf));
         }
     }
     fclose(file);
