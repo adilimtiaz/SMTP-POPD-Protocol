@@ -2,6 +2,7 @@
 #include "mailuser.h"
 #include "server.h"
 #include "popsession.h"
+#include "helpers.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -13,9 +14,9 @@
 
 static void handle_client(int fd);
 void handle_message(int fd, struct pop_session* session, char* buffer);
-void handle_user_command(int fd, struct pop_session* session, char* username);
-void handle_pass_command(int fd, struct pop_session* session, char* password);
-void handle_stat_command(int fd, struct pop_session* session);
+void handle_user_command(int fd, struct pop_session* session, char* buffer);
+void handle_pass_command(int fd, struct pop_session* session, char* buffer);
+void handle_stat_command(int fd, struct pop_session* session, char* buffer);
 void handle_list_command(int fd, struct pop_session* session, char* mail_index);
 void handle_dele_command(int fd, struct pop_session* session, char* dele_index);
 void print_all_messages(int fd, mail_list_t messages);
@@ -49,98 +50,114 @@ void handle_client(int fd) {
 }
 
 void handle_message(int fd, struct pop_session* session, char* buffer){
-    char* command = strtok(buffer, " \n");
-    if(strcasecmp(command, "USER") == 0){
-        char* user_name = strtok(NULL, " \n");
-        handle_user_command(fd, session, user_name);
-    } else if(strcasecmp(command, "PASS") == 0){
-        char* password = strtok(NULL, " \n");
-        handle_pass_command(fd, session, password);
-    } else if(strcasecmp(command, "STAT") == 0){
+    if(strncasecmp(buffer, "USER ", 5) == 0){
+        handle_user_command(fd, session, buffer);
+    } else if(strncasecmp(buffer, "PASS ", 5) == 0){
+        handle_pass_command(fd, session, buffer);
+    } else if(strncasecmp(buffer, "STAT ", 5) == 0){
         if(session->is_authenticated > 0){
-            handle_stat_command(fd, session);
+            handle_stat_command(fd, session, buffer);
         } else {
             send_string(fd, "-ERR must be authenticated to use STAT command\n");
         }
-    }else if(strcasecmp(command, "LIST") == 0){
+    }else if(strncasecmp(buffer, "LIST ", 5) == 0){
         if(session->is_authenticated > 0){
             char* mail_index = strtok(NULL, " \n");
             handle_list_command(fd, session, mail_index);
         } else {
             send_string(fd, "-ERR must be authenticated to use LIST command\n");
         }
-    } else if(strcasecmp(command, "RETR") == 0){
+    } else if(strncasecmp(buffer, "RETR ", 5) == 0){
         if(session->is_authenticated > 0) {
             char * mail_index = strtok(NULL, " \n");
             handle_retr_command(fd, session, mail_index);
         } else {
             send_string(fd, "-ERR must be authenticated to use RETR command\n");
         }
-    }else if(strcasecmp(command, "DELE") == 0){
+    }else if(strncasecmp(buffer, "DELE ", 5) == 0){
         if(session->is_authenticated > 0){
             char* dele_index = strtok(NULL, " \n");
             handle_dele_command(fd, session, dele_index);
         } else {
             send_string(fd, "-ERR must be authenticated to use DELE command\n");
         }
-    }else if(strcasecmp(command, "NOOP") == 0){
+    }else if(strncasecmp(buffer, "NOOP ", 5) == 0){
         if(session->is_authenticated){
             send_string(fd,"+OK\n");
         } else {
             send_string(fd, "-ERR must be authenticated to use NOOP command\n");
         }
-    }else if(strcasecmp(command, "RSET") == 0){
+    }else if(strncasecmp(buffer, "RSET ", 5) == 0){
         if(session->is_authenticated > 0){
             handle_rset_command(fd, session);
         } else {
             send_string(fd, "-ERR must be authenticated to use RSET command\n");
         }
-    }else if(strcasecmp(command, "QUIT") == 0){
+    }else if(strncasecmp(buffer, "QUIT ", 5) == 0){
         handle_quit_command(fd, session);
     } else {
         send_string(fd, "-ERR Invalid command\n");
     }
 }
 
-void handle_user_command(int fd, struct pop_session* session, char* username) {
+void handle_user_command(int fd, struct pop_session* session, char* buffer) {
     if(session->is_authenticated > 0){
         send_string(fd, "-ERR already logged in, please quit before issuing USER command\n");
     } else {
-        if (username == NULL) {
+        char* bufCopy = strdup(buffer);
+        strtok(bufCopy," ");     //ignore first word
+        char* user_name = strtok(NULL, " ");
+        if (isWord(user_name) == 0) {
             send_string(fd, "-ERR no username supplied\n");
         } else {
-            if (is_valid_user(username, NULL)) {
-                session->username = strdup(
-                        username);       //use strdup to avoid rewriting of these variables when using strtok
-                send_string(fd, "+OK valid username: %s \n", username);
+            char* lineEnding = substr(buffer, (int)(5 + strlen(user_name)), 0);
+            if(isLineEndingValid(lineEnding) == 1){
+                if (is_valid_user(user_name, NULL)) {
+                    session->username = strdup(
+                            user_name);       //use strdup to avoid rewriting of these variables when using strtok
+                    send_string(fd, "+OK valid username: %s \n", user_name);
+                } else {
+                    send_string(fd, "-ERR invalid username\n");
+                }
             } else {
-                send_string(fd, "-ERR invalid username\n");
+                send_string(fd, "-ERR invalid input\n");
             }
         }
     }
 }
 
-void handle_pass_command(int fd, struct pop_session* session, char* password) {
+void handle_pass_command(int fd, struct pop_session* session, char* buffer) {
     if (session->is_authenticated > 0) {
         send_string(fd, "-ERR already logged in, please quit before issuing PASS command\n");
     } else {
         if (session->username == NULL) {
             send_string(fd, "-ERR please specify a valid username first\n");
-        } else if (password == NULL) {
-            send_string(fd, "-ERR no password supplied\n");
-        } else {
-            if (is_valid_user(session->username, password) > 0) {
-                session->is_authenticated = 1;
-                session->messages = load_user_mail(session->username);
-                send_string(fd, "+OK success, logged in as %s\n", session->username);
+        }
+        else {
+            char* bufCopy = strdup(buffer);
+            strtok(bufCopy, " "); // Ignore first word
+            char* password = strtok(NULL, " "); // Domain name is second word
+            if(isWord(password) == 0) { //indicates no domain provided
+                send_string(fd, "500-Invalid syntax no password provided\n");
             } else {
-                send_string(fd, "-ERR invalid password\n");
+                char* lineEnding = substr(strdup(buffer), (int)(5 + strlen(password)), 0);
+                if(isLineEndingValid(lineEnding) == 1) {
+                    if(is_valid_user(session->username, password) > 0) {
+                        session->is_authenticated = 1;
+                        session->messages = load_user_mail(session->username);
+                        send_string(fd, "+OK success, logged in as %s\n", session->username);
+                    } else {
+                        send_string(fd, "-ERR invalid password\n");
+                    }
+                } else {
+                    send_string(fd, "500-Invalid Syntax Invalid Line Ending\n");
+                }
             }
         }
     }
 }
 
-void handle_stat_command(int fd, struct pop_session* session){
+void handle_stat_command(int fd, struct pop_session* session, char* buffer){
     send_string(fd, "+OK %d message (%d octets)\n", get_mail_count(session->messages), (int)get_mail_list_size(session->messages));
 }
 
