@@ -100,11 +100,7 @@ void handle_state_zero(int fd, struct smtp_session* session, char* buffer) {
         if(isWord(domainName) == 0) { //indicates no domain provided
             send_string(fd, "500-Invalid Syntax No Domain Name provided\n");
         } else {
-            char lastCharOfExpectedWord = domainName[(strlen(domainName) -1)];
-            send_string(fd, "Line: %c", lastCharOfExpectedWord);
-            char* remainingLine = strchr(buffer, lastCharOfExpectedWord);
-            send_string(fd, "Line: %s", remainingLine);
-            char* lineEnding = substr(remainingLine, 1, 0);
+            char* lineEnding = substr(strdup(buffer), (int)(5 + strlen(domainName)), 0);
             if(isLineEndingValid(lineEnding) == 1){
                 session->senderDomainName = domainName;
                 session->state = 1; //transition to next state
@@ -115,24 +111,24 @@ void handle_state_zero(int fd, struct smtp_session* session, char* buffer) {
         }
     } else if(strncasecmp(buffer,"MAIL FROM:<", 10) == 0){
         send_string(fd, "503 Bad Sequence of Commands\n");
-    } else if(strcasecmp(buffer, "RCPT") == 0){
+    } else if(strncasecmp(buffer, "RCPT TO:<",7) == 0){
         send_string(fd, "503 Bad Sequence of Commands\n");
-    } else if(strcasecmp(buffer, "DATA") == 0){
+    } else if(strncasecmp(buffer, "DATA", 4) == 0){
         send_string(fd, "503 Bad Sequence of Commands\n");
-    } else if(strcasecmp(buffer, "QUIT") == 0){
+    } else if(strncasecmp(buffer, "QUIT", 4) == 0){
         session->state = -1;
         send_string(fd, "221 OK\n");
-    } else if(strcasecmp(buffer, "NOOP") == 0){
+    } else if(strncasecmp(buffer, "NOOP", 4) == 0){
         send_string(fd, "250 OK\n");
-    } else if(strcasecmp(buffer, "RSET") == 0){
+    } else if(strncasecmp(buffer, "RSET",4) == 0){
         send_string(fd, "502-Command not Implemented\n");
-    } else if(strcasecmp(buffer, "VRFY") == 0){
+    } else if(strncasecmp(buffer, "VRFY ", 5) == 0){
         send_string(fd, "502-Command not Implemented\n");
-    } else if(strcasecmp(buffer, "EXPN") == 0){
+    } else if(strncasecmp(buffer, "EXPN ", 5) == 0){
         send_string(fd, "502-Command not Implemented\n");
-    } else if(strcasecmp(buffer, "HELP") == 0){
+    } else if(strncasecmp(buffer, "HELP", 4) == 0){
         send_string(fd,"502-Command not Implemented\n");
-    } else if(strcasecmp(buffer, "EHLO") == 0) {
+    } else if(strncasecmp(buffer, "EHLO ", 5) == 0) {
         send_string(fd,"502-Command not Implemented\n");
     }else {
         send_string(fd, "500-Invalid Syntax Coming From Here\n");
@@ -140,13 +136,16 @@ void handle_state_zero(int fd, struct smtp_session* session, char* buffer) {
 }
 
 void handle_state_one(int fd, struct smtp_session* session, char* buffer){
-    if(strcasecmp(buffer,"HELO") == 0){
+    if(strncasecmp(buffer,"HELO ", 5) == 0){
         send_string(fd, "503 Bad Sequence of Commands\n");
     } else if(strncasecmp(buffer,"MAIL FROM:<", 10) == 0){
         if(strchr(buffer, '>') != NULL){
             char* bufCopy = strdup(buffer);
             strtok(bufCopy, "<");
             char* recipient = strtok(NULL, ">");
+            if(isWord(recipient) == 0){
+                return;
+            }
             char* strInlcudingRightArrow = strchr(buffer, '>');
             char* strAfterRightArrow = substr(strInlcudingRightArrow, 1, 0);
             if(isLineEndingValid(strAfterRightArrow) == 1){
@@ -160,24 +159,24 @@ void handle_state_one(int fd, struct smtp_session* session, char* buffer){
             // Mail provided without proper <Address>
             send_string(fd, "500-Invalid Syntax: <Address> not formatted correctly\n");
         }
-    } else if(strcasecmp(buffer, "RCPT") == 0){
+    } else if(strncasecmp(buffer, "RCPT TO:<", 7) == 0){
         send_string(fd, "503 Bad Sequence of Commands\n");
-    } else if(strcasecmp(buffer, "DATA") == 0){
+    } else if(strncasecmp(buffer, "DATA", 4) == 0){
         send_string(fd, "503 Bad Sequence of Commands\n");
-    } else if(strcasecmp(buffer, "QUIT") == 0){
+    } else if(strncasecmp(buffer, "QUIT", 4) == 0){
         session->state = -1;
         send_string(fd, "221 OK\n");
-    } else if(strcasecmp(buffer, "NOOP") == 0){
+    } else if(strncasecmp(buffer, "NOOP", 4) == 0){
         send_string(fd, "250 OK\n");
-    } else if(strcasecmp(buffer, "RSET") == 0){
+    } else if(strncasecmp(buffer, "RSET", 4) == 0){
         send_string(fd, "502-Command not Implemented\n");
-    } else if(strcasecmp(buffer, "VRFY") == 0){
+    } else if(strncasecmp(buffer, "VRFY ", 5) == 0){
         send_string(fd, "502-Command not Implemented\n");
-    } else if(strcasecmp(buffer, "EXPN") == 0){
+    } else if(strncasecmp(buffer, "EXPN ", 5) == 0){
         send_string(fd, "502-Command not Implemented\n");
-    } else if(strcasecmp(buffer, "HELP") == 0){
+    } else if(strncasecmp(buffer, "HELP", 4) == 0){
         send_string(fd, "502-Command not Implemented\n");
-    } else if(strcasecmp(buffer, "EHLO") == 0) {
+    } else if(strncasecmp(buffer, "EHLO ",5) == 0) {
         send_string(fd,"502-Command not Implemented\n");
     } else {
         send_string(fd, "500-Invalid Syntax\n");
@@ -185,20 +184,29 @@ void handle_state_one(int fd, struct smtp_session* session, char* buffer){
 }
 
 void handle_state_two(int fd, struct smtp_session* session, char* buffer) {
-    char *code = strtok(buffer, " \n");
-    if (strcasecmp(code, "HELO") == 0) {
+    if (strncasecmp(buffer, "HELO ", 5) == 0) {
 
-    } else if (strncasecmp(code, "MAIL FROM:<", 10) == 0) {
+    } else if (strncasecmp(buffer, "MAIL FROM:<", 10) == 0) {
         send_string(fd, "503 Bad Sequence of Commands\n");
-    } else if (strcasecmp(code, "RCPT TO:<") == 0) {
+    } else if (strncasecmp(buffer, "RCPT TO:<", 7) == 0) {
+        if(strchr(buffer, '>') != NULL) {
+            char *bufCopy = strdup(buffer);
+            strtok(bufCopy, "<");
             char *recipient = strtok(NULL, ">");
-            if (is_valid_user(recipient, NULL) > 0) {
-                addRecipient(session, recipient);
-                send_string(fd, "250 OK\n");
-            } else {
-                send_string(fd, "550 No such user here\n");
+            char* strInlcudingRightArrow = strchr(buffer, '>');
+            char* strAfterRightArrow = substr(strInlcudingRightArrow, 1, 0);
+            if(isLineEndingValid(strAfterRightArrow) == 1){
+                if (is_valid_user(recipient, NULL) > 0) {
+                    addRecipient(session, recipient);
+                    send_string(fd, "250 OK\n");
+                } else {
+                    send_string(fd, "550 No such user here\n");
+                }
             }
-    } else if (strcasecmp(code, "DATA") == 0) {
+        } else {
+            send_string(fd, "500-Invalid Syntax: <RECIPIENT not formatted correctly>\n");
+        }
+    } else if (strcasecmp(buffer, "DATA") == 0) {
         if (session->recipients == 0) {
             send_string(fd, "554 No valid recipients\n");
         }
@@ -207,20 +215,20 @@ void handle_state_two(int fd, struct smtp_session* session, char* buffer) {
             session->tempFileFD = mkstemp(session->tempFileName);
             send_string(fd, "354 Start mail input; end with <CRLF>.<CRLF>\n");
         }
-    } else if (strcasecmp(code, "QUIT") == 0) {
+    } else if (strncasecmp(buffer, "QUIT", 4) == 0) {
         session->state = -1;
         send_string(fd, "221 OK\n");
-    } else if (strcasecmp(code, "NOOP") == 0) {
+    } else if (strncasecmp(buffer, "NOOP ", 5) == 0) {
         send_string(fd, "250 OK\n");
-    } else if (strcasecmp(code, "RSET") == 0) {
+    } else if (strncasecmp(buffer, "RSET ",5) == 0) {
         send_string(fd, "502-Command not Implemented\n");
-    } else if (strcasecmp(code, "VRFY") == 0) {
+    } else if (strncasecmp(buffer, "VRFY ",5) == 0) {
         send_string(fd, "502-Command not Implemented\n");
-    } else if (strcasecmp(code, "EXPN") == 0) {
+    } else if (strncasecmp(buffer, "EXPN ",5) == 0) {
         send_string(fd, "502-Command not Implemented\n");
-    } else if (strcasecmp(code, "HELP") == 0) {
+    } else if (strncasecmp(buffer, "HELP ",5) == 0) {
         send_string(fd, "502-Command not Implemented\n");
-    } else if(strcasecmp(code, "EHLO") == 0) {
+    } else if(strncasecmp(buffer, "EHLO ", 5) == 0) {
         send_string(fd,"502-Command not Implemented\n");
     } else {
         send_string(fd, "500-Invalid Syntax\n");
