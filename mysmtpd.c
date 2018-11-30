@@ -35,6 +35,88 @@ int main(int argc, char *argv[]) {
   return 0;
 }
 
+// Taken from: https://stackoverflow.com/questions/122616/how-do-i-trim-leading-trailing-whitespace-in-a-standard-way
+// Note: This function removes all LEADING and TRAILING whitespaces, newlines etc. from a string.
+// This function will return a string with len of 0 if a string is only spaces or newline chars
+char* trimwhitespace(char *str)
+{
+    char *end;
+
+    // Trim leading space
+    while(isspace((unsigned char)*str)) str++;
+
+    if(*str == 0)  // All spaces?
+        return str;
+
+    // Trim trailing space
+    end = str + strlen(str) - 1;
+    while(end > str && isspace((unsigned char)*end)) end--;
+
+    // Write new null terminator character
+    end[1] = '\0';
+
+    return str;
+}
+
+// Cuts trailing whitespace and then checks if a newline char is present at the end of the line.
+// If anything else is present in str, then it will return false
+// Modifies input String
+int isLineEndingValid(char *str){
+    if(str == NULL){
+        // No newline
+        return 0;
+    }
+
+    // Check if last char of string is \n
+    int len = strlen(str);
+    if(str[len-1] != '\n'){
+        return 0;
+    }
+    str = trimwhitespace(str);
+    return strlen(str) > 0 ? 0 : 1;
+}
+
+// Adapted from: https://cboard.cprogramming.com/c-programming/81565-substr.html
+/*  substr("some string", 5, 0, NULL)
+    returns "string"
+    substr("some string", -5, 3, NULL)
+    returns "str"
+    substr("some string", 4, 0, "thing")
+    returns "something"
+ *
+ */
+
+char* substr (const char* string, int pos, int len)
+{
+    char* substring;
+    int   i;
+    int   length;
+
+    if (string == NULL)
+        return NULL;
+    length = strlen(string);
+    if (pos < 0) {
+        pos = length + pos;
+        if (pos < 0) pos = 0;
+    }
+    else if (pos > length) pos = length;
+    if (len <= 0) {
+        len = length - pos + len;
+        if (len < 0) len = length - pos;
+    }
+    if (pos + len > length) len = length - pos;
+
+    if ((substring = malloc(sizeof(*substring)*(len+1))) == NULL)
+        return NULL;
+    len += pos;
+    for (i = 0; pos != len; i++, pos++)
+        substring[i] = string[pos];
+    substring[i] = '\0';
+
+    return substring;
+}
+
+
 void handle_client(int fd) {
     struct smtp_session* session = smtp_session_create();
 
@@ -86,23 +168,27 @@ void handle_incoming_message(int fd, struct smtp_session* session, char *buffer)
 
 void handle_state_zero(int fd, struct smtp_session* session, char* buffer) {
     if(strncasecmp(buffer,"HELO ", 5) == 0){
-        // TODO FIX BUG WHERE YOU CAN HELO NOONE. I.E. COMMAND IS HELO .
-        char* word = strtok(buffer, " "); // Ignore first word
-        send_string(fd, "Word is %s", word);
+        strtok(buffer, " "); // Ignore first word
         char* domainName = strtok(NULL, " "); // Domain name is second word
-        send_string(fd, "Word is %s", domainName);
-        send_string(fd, "bird is %s", strtok(NULL, " "));
+        domainName = strlen(trimwhitespace(domainName)) > 0 ? domainName : NULL;
         if(domainName == NULL) { //indicates no domain provided
             send_string(fd, "500-Invalid Syntax No Domain Name provided\n");
         } else {
-            struct utsname system;
-            if(uname(&system) != 0){
-                // TODO figure out what error code should be
-                send_string(fd, "Bad uname bro");
+            char* bufCopy = strdup(buffer);
+            int indexOfLastExpectedChar = 5 + strlen(domainName);
+            char* lineEnding = substr(bufCopy, indexOfLastExpectedChar, 0);
+            if(isLineEndingValid(lineEnding) == 1){
+                struct utsname system;
+                if(uname(&system) != 0){
+                    // TODO figure out what error code should be
+                    send_string(fd, "Bad uname bro");
+                }
+                session->senderDomainName = domainName;
+                session->state = 1; //transition to next state
+                send_string(fd, "%s greets %s\n", system.sysname, domainName);
             }
-            session->senderDomainName = domainName;
-            session->state = 1; //transition to next state
-            send_string(fd, "%s greets %s", system.sysname, domainName);
+            else
+                send_string(fd, "500-Invalid Syntax: Invalid Line Ending\n");
         }
     } else if(strcasecmp(buffer,"MAIL") == 0){
         send_string(fd, "503 Bad Sequence of Commands\n");
@@ -130,99 +216,23 @@ void handle_state_zero(int fd, struct smtp_session* session, char* buffer) {
     }
 }
 
-// Taken from: https://stackoverflow.com/questions/122616/how-do-i-trim-leading-trailing-whitespace-in-a-standard-way
-// Note: This function removes all LEADING and TRAILING whitespaces, newlines etc. from a string.
-char* trimwhitespace(char *str)
-{
-    char *end;
-
-    // Trim leading space
-    while(isspace((unsigned char)*str)) str++;
-
-    if(*str == 0)  // All spaces?
-        return str;
-
-    // Trim trailing space
-    end = str + strlen(str) - 1;
-    while(end > str && isspace((unsigned char)*end)) end--;
-
-    // Write new null terminator character
-    end[1] = '\0';
-
-    return str;
-}
-
-// Cuts trailing whitespace and then checks if a newline char is present at the end of the line.
-// If anything else is present in str, then it will return false
-// Modifies input String
-int isLineEndingValid(char *str){
-    if(str == NULL){
-        // No newline
-        return 0;
-    }
-
-    str = trimwhitespace(str);
-    return strlen(str) > 0 ? 0 : 1;
-}
-
-// Adapted from: https://cboard.cprogramming.com/c-programming/81565-substr.html
-/*  substr("some string", 5, 0, NULL)
-    returns "string"
-    substr("some string", -5, 3, NULL)
-    returns "str"
-    substr("some string", 4, 0, "thing")
-    returns "something"
- *
- */
-
-char* substr (const char* string, int pos, int len)
-{
-    char* substring;
-    int   i;
-    int   length;
-
-    if (string == NULL)
-        return NULL;
-    length = strlen(string);
-    if (pos < 0) {
-        pos = length + pos;
-        if (pos < 0) pos = 0;
-    }
-    else if (pos > length) pos = length;
-    if (len <= 0) {
-        len = length - pos + len;
-        if (len < 0) len = length - pos;
-    }
-    if (pos + len > length) len = length - pos;
-
-    if ((substring = malloc(sizeof(*substring)*(len+1))) == NULL)
-        return NULL;
-    len += pos;
-    for (i = 0; pos != len; i++, pos++)
-        substring[i] = string[pos];
-    substring[i] = '\0';
-
-    return substring;
-}
-
 void handle_state_one(int fd, struct smtp_session* session, char* buffer){
     if(strcasecmp(buffer,"HELO") == 0){
         send_string(fd, "503 Bad Sequence of Commands\n");
     } else if(strncasecmp(buffer,"MAIL FROM:<", 10) == 0){
-        // 62 is '>'
-        if(strchr(buffer, 62) != NULL){
+        if(strchr(buffer, '>') != NULL){
             char* bufCopy = strdup(buffer);
             strtok(bufCopy, "<");
             char* recipient = strtok(NULL, ">");
-            char* strInlcudingRightArrow = strchr(buffer, 62);
-            char* strAfterRightArrow = substr(strInlcudingRightArrow, 1, 0); //
+            char* strInlcudingRightArrow = strchr(buffer, '>');
+            char* strAfterRightArrow = substr(strInlcudingRightArrow, 1, 0);
             if(isLineEndingValid(strAfterRightArrow) == 1){
                 session->sender = recipient;
                 send_string(fd, "250 OK\n");
                 session->state = 2;
             }
             else
-                send_string(fd, "500-Invalid Syntax: Extra characters found after recipient mail\n");
+                send_string(fd, "500-Invalid Syntax: Invalid Line Ending\n");
         } else {
             // Mail provided without proper <Address>
             send_string(fd, "500-Invalid Syntax: <Address> not formatted correctly\n");
