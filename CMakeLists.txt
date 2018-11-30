@@ -24,7 +24,7 @@ add_executable(mysmtpd
         netbuffer.c
         netbuffer.h
         server.c
-        server.h smtpsession.c)
+        server.h smtpsession.c helpers.h helpers.c helpers.h)
 
 # Add a target named `mypopd`
 # Followed by a list of source files used to compile the target
@@ -35,4 +35,4 @@ add_executable(mypopd
         netbuffer.c
         netbuffer.h
         server.c
-        server.h smtpsession.c smtpsession.h popsession.c popsession.h)
+        server.h smtpsession.c smtpsession.h popsession.c popsession.h helpers.h helpers.c helpers.h)
