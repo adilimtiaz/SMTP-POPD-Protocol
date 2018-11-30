@@ -96,8 +96,7 @@ void handle_state_zero(int fd, struct smtp_session* session, char* buffer) {
     if(strncasecmp(buffer,"HELO ", 5) == 0){
         strtok(buffer, " "); // Ignore first word
         char* domainName = strtok(NULL, " "); // Domain name is second word
-        domainName = strlen(trimwhitespace(domainName)) > 0 ? domainName : NULL;
-        if(domainName == NULL) { //indicates no domain provided
+        if(isWord(domainName) == 0) { //indicates no domain provided
             send_string(fd, "500-Invalid Syntax No Domain Name provided\n");
         } else {
             char* bufCopy = strdup(buffer);

@@ -8,7 +8,7 @@
 char* trimwhitespace(char *str);
 int isLineEndingValid(char *str);
 char* substr (const char* string, int pos, int len);
-
+int isWord(char* str);
 
 
 #ifndef A3_HELPERS_H

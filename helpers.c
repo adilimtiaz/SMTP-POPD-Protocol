@@ -63,8 +63,7 @@ int isLineEndingValid(char *str){
  *
  */
 
-char* substr (const char* string, int pos, int len)
-{
+char* substr (const char* string, int pos, int len) {
     char* substring;
     int   i;
     int   length;
@@ -91,6 +90,12 @@ char* substr (const char* string, int pos, int len)
     substring[i] = '\0';
 
     return substring;
+}
+
+// Returns 1 if a sting contains any non-space chars, else 0
+int isWord(char* str){
+    str = trimwhitespace(str);
+    return strlen(str) > 0 ? 1 : 0;
 }
 
 
