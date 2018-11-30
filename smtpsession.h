@@ -11,6 +11,7 @@
 struct smtp_session {
     int state;
     char* senderDomainName;
+    char* serverDomainName;
     char* sender;
     int recipientNum;
     int tempFileFD;

@@ -69,11 +69,16 @@ int isLineEndingValid(char *str){
 
     // Check if last char of string is \n
     int len = strlen(str);
-    if(str[len-1] != '\n'){
+    // If string is 1 char long and last char is not \n
+    // Else lastChar of a string is not \n
+    // Then line not valid
+    if ((len == 1 && str[0] != '\n') &&
+        (str[len - 1] != '\n')) {
         return 0;
     }
     str = trimwhitespace(str);
-    return strlen(str) > 0 ? 0 : 1;
+    // if str is empty it means it only consists of space type chars
+    return strlen(str) == 0 ? 1 : 0;
 }
 
 // Adapted from: https://cboard.cprogramming.com/c-programming/81565-substr.html
@@ -120,8 +125,15 @@ char* substr (const char* string, int pos, int len)
 void handle_client(int fd) {
     struct smtp_session* session = smtp_session_create();
 
-    send_string(fd, "220 foo.com Simple Mail Transfer Service Ready\n");
     net_buffer_t buffer = nb_create(fd, 10000);
+
+    struct utsname system;
+    if(uname(&system) != 0){
+        // TODO figure out what error code should be
+        send_string(fd, "Bad uname bro");
+    }
+    session->serverDomainName = system.nodename;
+    send_string(fd, "220 %s Simple Mail Transfer Service Ready\n", session->serverDomainName);
 
     while(session->state >= 0){
         send_string(fd, "state is: %d\n", session->state);
@@ -178,14 +190,9 @@ void handle_state_zero(int fd, struct smtp_session* session, char* buffer) {
             int indexOfLastExpectedChar = 5 + strlen(domainName);
             char* lineEnding = substr(bufCopy, indexOfLastExpectedChar, 0);
             if(isLineEndingValid(lineEnding) == 1){
-                struct utsname system;
-                if(uname(&system) != 0){
-                    // TODO figure out what error code should be
-                    send_string(fd, "Bad uname bro");
-                }
                 session->senderDomainName = domainName;
                 session->state = 1; //transition to next state
-                send_string(fd, "%s greets %s\n", system.sysname, domainName);
+                send_string(fd, "%s greets %s\n", session->serverDomainName, domainName);
             }
             else
                 send_string(fd, "500-Invalid Syntax: Invalid Line Ending\n");
