@@ -94,14 +94,17 @@ void handle_incoming_message(int fd, struct smtp_session* session, char *buffer)
 
 void handle_state_zero(int fd, struct smtp_session* session, char* buffer) {
     if(strncasecmp(buffer,"HELO ", 5) == 0){
-        strtok(buffer, " "); // Ignore first word
+        char* bufCopy = strdup(buffer);
+        strtok(bufCopy, " "); // Ignore first word
         char* domainName = strtok(NULL, " "); // Domain name is second word
         if(isWord(domainName) == 0) { //indicates no domain provided
             send_string(fd, "500-Invalid Syntax No Domain Name provided\n");
         } else {
-            char* bufCopy = strdup(buffer);
-            int indexOfLastExpectedChar = 5 + strlen(domainName);
-            char* lineEnding = substr(bufCopy, indexOfLastExpectedChar, 0);
+            char lastCharOfExpectedWord = domainName[(strlen(domainName) -1)];
+            send_string(fd, "Line: %c", lastCharOfExpectedWord);
+            char* remainingLine = strchr(buffer, lastCharOfExpectedWord);
+            send_string(fd, "Line: %s", remainingLine);
+            char* lineEnding = substr(remainingLine, 1, 0);
             if(isLineEndingValid(lineEnding) == 1){
                 session->senderDomainName = domainName;
                 session->state = 1; //transition to next state
@@ -184,12 +187,10 @@ void handle_state_one(int fd, struct smtp_session* session, char* buffer){
 void handle_state_two(int fd, struct smtp_session* session, char* buffer) {
     char *code = strtok(buffer, " \n");
     if (strcasecmp(code, "HELO") == 0) {
-    } else if (strcasecmp(code, "MAIL") == 0) {
+
+    } else if (strncasecmp(code, "MAIL FROM:<", 10) == 0) {
         send_string(fd, "503 Bad Sequence of Commands\n");
-    } else if (strcasecmp(code, "RCPT") == 0) {
-        if (strcasecmp(strtok(NULL, "<"), "TO:") != 0) {
-                send_string(fd, "500-Invalid Syntax");
-            } else {
+    } else if (strcasecmp(code, "RCPT TO:<") == 0) {
             char *recipient = strtok(NULL, ">");
             if (is_valid_user(recipient, NULL) > 0) {
                 addRecipient(session, recipient);
@@ -197,7 +198,6 @@ void handle_state_two(int fd, struct smtp_session* session, char* buffer) {
             } else {
                 send_string(fd, "550 No such user here\n");
             }
-        }
     } else if (strcasecmp(code, "DATA") == 0) {
         if (session->recipients == 0) {
             send_string(fd, "554 No valid recipients\n");
