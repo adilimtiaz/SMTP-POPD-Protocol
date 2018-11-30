@@ -20,10 +20,11 @@ void handle_stat_command(int fd, struct pop_session* session, char* buffer);
 void handle_list_command(int fd, struct pop_session* session, char* buffer);
 void handle_dele_command(int fd, struct pop_session* session, char* dele_index);
 void print_all_messages(int fd, mail_list_t messages);
-void handle_rset_command(int fd, struct pop_session* session);
-void handle_quit_command(int fd, struct pop_session* session);
-void handle_retr_command(int fd, struct pop_session* session, char* mail_index);
+void handle_rset_command(int fd, struct pop_session* session, char* buffer);
+void handle_quit_command(int fd, struct pop_session* session, char* buffer);
+void handle_retr_command(int fd, struct pop_session* session, char* buffer);
 void read_mail_file(int fd, struct pop_session* session, const char* file_name);
+void handle_noop_command(int fd, char* buffer);
 
 int main(int argc, char *argv[]) {
 
@@ -68,32 +69,30 @@ void handle_message(int fd, struct pop_session* session, char* buffer){
         }
     } else if(strncasecmp(buffer, "RETR ", 5) == 0){
         if(session->is_authenticated > 0) {
-            char * mail_index = strtok(NULL, " \n");
-            handle_retr_command(fd, session, mail_index);
+            handle_retr_command(fd, session, buffer);
         } else {
             send_string(fd, "-ERR must be authenticated to use RETR command\n");
         }
     }else if(strncasecmp(buffer, "DELE ", 5) == 0){
         if(session->is_authenticated > 0){
-            char* dele_index = strtok(NULL, " \n");
-            handle_dele_command(fd, session, dele_index);
+            handle_dele_command(fd, session, buffer);
         } else {
             send_string(fd, "-ERR must be authenticated to use DELE command\n");
         }
     }else if(strncasecmp(buffer, "NOOP", 4) == 0){
         if(session->is_authenticated){
-            send_string(fd,"+OK\n");
+            handle_noop_command(fd, buffer);
         } else {
             send_string(fd, "-ERR must be authenticated to use NOOP command\n");
         }
     }else if(strncasecmp(buffer, "RSET", 4) == 0){
         if(session->is_authenticated > 0){
-            handle_rset_command(fd, session);
+            handle_rset_command(fd, session, buffer);
         } else {
             send_string(fd, "-ERR must be authenticated to use RSET command\n");
         }
     }else if(strncasecmp(buffer, "QUIT", 4) == 0){
-        handle_quit_command(fd, session);
+        handle_quit_command(fd, session, buffer);
     } else {
         send_string(fd, "-ERR Invalid command\n");
     }
@@ -167,12 +166,10 @@ void handle_stat_command(int fd, struct pop_session* session, char* buffer){
 }
 
 void handle_list_command(int fd, struct pop_session* session, char* buffer){
-    int mail_count_total = get_mail_count(session->messages);
     char* bufCopy = strdup(buffer);
-    send_string(fd, "bufCopy is: %s\n", bufCopy);
     char* hasNoParam = substr(bufCopy, 4, 0);
     if(isLineEndingValid(hasNoParam)){
-        send_string(fd, "+OK %d message (%d octets)\n", mail_count_total, (int)get_mail_list_size(session->messages));
+        send_string(fd, "+OK %d message (%d octets)\n", get_mail_count(session->messages), (int)get_mail_list_size(session->messages));
         print_all_messages(fd, session->messages);
     } else {
         strtok(bufCopy, " "); // Ignore first word
@@ -211,57 +208,91 @@ void print_all_messages(int fd, mail_list_t messages){
     send_string(fd, ".\n");
 }
 
-void handle_dele_command(int fd, struct pop_session* session, char* dele_index){
-    //TODO add checking if input is not a number
-    if(dele_index == NULL){
+void handle_dele_command(int fd, struct pop_session* session, char* buffer){
+    char* bufCopy = strdup(buffer);
+    strtok(bufCopy, " "); // Ignore first word
+    char* dele_index = strtok(NULL, " "); // delete index is second word
+    if(isWord(dele_index) == 0){
         send_string(fd, "-ERR no mail index supplied to delete\n");
     } else {
-        int dele_index_int = atoi(dele_index) - 1;  //subtract 1 to use 0 based indexing
-        if(dele_index_int + 1 <= 0){
-            send_string(fd, "-ERR mail index must be greater than 0\n");
-        } else {
-            mail_item_t mail_item = get_mail_item(session->messages, (unsigned int)dele_index_int);
-            if(!mail_item) {
-                send_string(fd, "-ERR no such item\n");
+        char* lineEnding = substr(buffer, (int)(5 + strlen(dele_index)), 0);
+        if(isLineEndingValid(lineEnding) == 1) {
+            int dele_index_int = atoi(dele_index) - 1;  //subtract 1 to use 0 based indexing
+            if (dele_index_int + 1 <= 0) {
+                send_string(fd, "-ERR mail index must be greater than 0\n");
             } else {
-                mark_mail_item_deleted(mail_item);
-                send_string(fd, "+OK marked item %d for deletion\n", dele_index_int + 1);
+                mail_item_t mail_item = get_mail_item(session->messages, (unsigned int) dele_index_int);
+                if (!mail_item) {
+                    send_string(fd, "-ERR no such item\n");
+                } else {
+                    mark_mail_item_deleted(mail_item);
+                    send_string(fd, "+OK marked item %d for deletion\n", dele_index_int + 1);
+                }
             }
+        } else {
+            send_string(fd, "-ERR DELE command requires no additional parameters\n");
         }
     }
 }
 
-void handle_rset_command(int fd, struct pop_session* session){
-    reset_mail_list_deleted_flag(session->messages);
-    send_string(fd, "+OK maildrop has %d messages (%d octets)\n",
-                get_mail_count(session->messages),
-                (int)get_mail_list_size(session->messages));
-}
-
-void handle_quit_command(int fd, struct pop_session* session){
-    if(session->is_authenticated > 0) {
-        destroy_mail_list(session->messages);
+void handle_rset_command(int fd, struct pop_session* session, char* buffer){
+    char* lineEnding = substr(strdup(buffer), 4, 0);
+    if(isLineEndingValid(lineEnding) == 1){
+        reset_mail_list_deleted_flag(session->messages);
+        send_string(fd, "+OK maildrop has %d messages (%d octets)\n",
+                    get_mail_count(session->messages),
+                    (int)get_mail_list_size(session->messages));
+    } else {
+        send_string(fd, "-ERR RSET command requires no additional parameters\n");
     }
-    session->has_quit = 1;
-    send_string(fd, "+OK pop server signing off\n");
 }
 
-void handle_retr_command(int fd, struct pop_session* session, char* mail_index){
-    if(mail_index == NULL){
+void handle_noop_command(int fd, char* buffer){
+    char* lineEnding = substr(strdup(buffer), 4, 0);
+    if(isLineEndingValid(lineEnding) == 1){
+        send_string(fd, "+OK\n");
+    } else {
+        send_string(fd, "-ERR NOOP command requires no additional parameters\n");
+    }
+}
+
+void handle_quit_command(int fd, struct pop_session* session,  char* buffer){
+    char* lineEnding = substr(strdup(buffer), 4, 0);
+    if(isLineEndingValid(lineEnding) == 1){
+        if(session->is_authenticated > 0) {
+            destroy_mail_list(session->messages);
+        }
+        session->has_quit = 1;
+        send_string(fd, "+OK pop server signing off\n");
+    } else {
+        send_string(fd, "-ERR QUIT command requires no additional parameters\n");
+    }
+}
+
+void handle_retr_command(int fd, struct pop_session* session, char* buffer){
+    char* bufCopy = strdup(buffer);
+    strtok(bufCopy, " "); // Ignore first word
+    char* mail_index = strtok(NULL, " "); // Domain name is second word
+    if(isWord(mail_index) == 0){
         send_string(fd, "-ERR no mail index supplied to retrieve\n");
     } else {
-        int retr_index_int = atoi(mail_index) - 1;  //subtract 1 to use 0 based indexing
-        if(retr_index_int + 1 <= 0){
-            send_string(fd, "-ERR mail index must be greater than 0\n");
-        } else {
-            mail_item_t mail_item = get_mail_item(session->messages, (unsigned int)retr_index_int);
-            if(!mail_item) {
-                send_string(fd, "-ERR no such item\n");
+        char* lineEnding = substr(buffer, (int)(5 + strlen(mail_index)), 0);
+        if(isLineEndingValid(lineEnding) == 1) {
+            int retr_index_int = atoi(mail_index) - 1;  //subtract 1 to use 0 based indexing
+            if (retr_index_int + 1 <= 0) {
+                send_string(fd, "-ERR mail index must be a number greater than 0\n");
             } else {
-                const char* file_name = get_mail_item_filename(mail_item);
-                send_string(fd, "+OK %d octets", (int)get_mail_item_size(mail_item));
-                read_mail_file(fd, session, file_name);
+                mail_item_t mail_item = get_mail_item(session->messages, (unsigned int) retr_index_int);
+                if (!mail_item) {
+                    send_string(fd, "-ERR no such item\n");
+                } else {
+                    const char *file_name = get_mail_item_filename(mail_item);
+                    send_string(fd, "+OK %d octets\n", (int) get_mail_item_size(mail_item));
+                    read_mail_file(fd, session, file_name);
+                }
             }
+        } else {
+            send_string(fd, "-ERR RETR command requires no additional parameters\n");
         }
     }
 }
