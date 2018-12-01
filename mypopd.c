@@ -178,7 +178,6 @@ void handle_list_command(int fd, struct pop_session* session, char* buffer){
         if(mail_index_int < 0){
             send_string(fd, "-ERR mail index must be a positive number\n");
         } else {
-            send_string(fd, "mail_index_int is %d\n", mail_index_int);
             if (mail_index_int + 1 <= 0) {
                 send_string(fd, "-ERR mail index must be greater than 0\n");
             } else {
@@ -308,7 +307,7 @@ void read_mail_file(int fd, struct pop_session* session, const char* file_name){
             send_all(fd, buf, nread);
         }
         if(ferror(file)){
-            send_all(fd, buf, sizeof(buf));
+            send_string(fd, "-ERR unable to read file\n");
         }
     }
     fclose(file);
