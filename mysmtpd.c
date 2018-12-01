@@ -22,7 +22,7 @@ void handle_state_two(int fd, struct smtp_session* session, char* buffer);
 void handle_state_three(int fd, struct smtp_session* session, char* buffer);
 void handle_state_four(int fd, struct smtp_session* session, char* buffer);
 
-char file_name_template[] = "./mail.XXXXXX";
+char file_name_template[] = "../mail.XXXXXX";
 
 int main(int argc, char *argv[]) {
   
