@@ -82,7 +82,6 @@ void handle_client(int fd) {
     robust_send_string(fd, "220 %s Simple Mail Transfer Service Ready\n", session->serverDomainName);
 
     while(session->state >= 0  && sendStringFailed == 0){
-        robust_send_string(fd, "state is: %d\n", session->state);
         char out[MAX_LINE_LENGTH + 1];
         if(nb_read_line(buffer, out) > 0) {
             if(endsWithNewline(out) == 0) {
