@@ -149,9 +149,9 @@ void handle_state_zero(int fd, struct smtp_session* session, char* buffer) {
             else
                 robust_send_string(fd, "501-Invalid Syntax: Invalid Line Ending\n");
         }
-    } else if(strncasecmp(buffer,"MAIL FROM:<", 10) == 0){
+    } else if(strncasecmp(buffer,"MAIL FROM:<", 11) == 0){
         robust_send_string(fd, "503 Bad Sequence of Commands\n");
-    } else if(strncasecmp(buffer, "RCPT TO:<",7) == 0){
+    } else if(strncasecmp(buffer, "RCPT TO:<",9) == 0){
         robust_send_string(fd, "503 Bad Sequence of Commands\n");
     } else if(strncasecmp(buffer, "DATA", 4) == 0){
         robust_send_string(fd, "503 Bad Sequence of Commands\n");
@@ -204,7 +204,7 @@ void handle_state_one(int fd, struct smtp_session* session, char* buffer){
             // Mail provided without proper <Address>
             robust_send_string(fd, "501-Invalid Argument: <Address> not formatted correctly\n");
         }
-    } else if(strncasecmp(buffer, "RCPT TO:<", 7) == 0){
+    } else if(strncasecmp(buffer, "RCPT TO:<", 9) == 0){
         robust_send_string(fd, "503 Bad Sequence of Commands\n");
     } else if(strncasecmp(buffer, "DATA", 4) == 0){
         robust_send_string(fd, "503 Bad Sequence of Commands\n");
@@ -245,7 +245,6 @@ void handle_state_two(int fd, struct smtp_session* session, char* buffer) {
             char* strInlcudingRightArrow = strchr(buffer, '>');
             char* strAfterRightArrow = substr(strInlcudingRightArrow, 1, 0);
             if(isLineEndingValid(strAfterRightArrow) == 1){
-                robust_send_string(fd, "Recipient: %s \n", recipient);
                 if (is_valid_user(recipient, NULL) > 0) {
                     addRecipient(session, recipient);
                     robust_send_string(fd, "250 OK\n");
@@ -294,6 +293,7 @@ void handle_state_three(int fd, struct smtp_session* session, char* buffer) {
         save_user_mail(session->tempFileName, session->recipients);
         close(session->tempFileFD);
         unlink(session->tempFileName);
+        robust_send_string(fd, "220 - Data delivered \n");
         session->state++;
     } else {
         write(session->tempFileFD, buffer, strlen(buffer));
