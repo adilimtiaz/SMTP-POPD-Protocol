@@ -4,6 +4,7 @@
 #include "smtpsession.h"
 #include "helpers.h"
 
+#include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -23,6 +24,7 @@ void handle_state_three(int fd, struct smtp_session* session, char* buffer);
 void handle_state_four(int fd, struct smtp_session* session, char* buffer);
 
 char file_name_template[] = "../mail.XXXXXX";
+int sendStringFailed = 0;
 
 int main(int argc, char *argv[]) {
   
@@ -36,6 +38,16 @@ int main(int argc, char *argv[]) {
   return 0;
 }
 
+void robustSendString(int fd, char* str, ...){
+    va_list args;
+
+    va_start(args, str);
+    if(send_string(fd, str, args) < 0){
+        sendStringFailed = 1;
+    }
+    va_end(args);
+}
+
 void handle_client(int fd) {
     struct smtp_session* session = smtp_session_create();
 
@@ -47,9 +59,9 @@ void handle_client(int fd) {
         send_string(fd, "Bad uname bro");
     }
     session->serverDomainName = system.nodename;
-    send_string(fd, "220 %s Simple Mail Transfer Service Ready\n", session->serverDomainName);
+    robustSendString(fd, "220 %s Simple Mail Transfer Service Ready\n", session->serverDomainName);
 
-    while(session->state >= 0){
+    while(session->state >= 0  && sendStringFailed == 0){
         send_string(fd, "state is: %d\n", session->state);
         char out[MAX_LINE_LENGTH + 1];
         if(nb_read_line(buffer, out) > 0) {
