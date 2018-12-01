@@ -4,6 +4,7 @@
 #include "popsession.h"
 #include "helpers.h"
 
+#include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -26,6 +27,8 @@ void handle_retr_command(int fd, struct pop_session* session, char* buffer);
 void read_mail_file(int fd, struct pop_session* session, const char* file_name);
 void handle_noop_command(int fd, char* buffer);
 
+int sendStringFailed = 0;
+
 int main(int argc, char *argv[]) {
 
     if (argc != 2) {
@@ -38,11 +41,41 @@ int main(int argc, char *argv[]) {
     return 0;
 }
 
+int robust_send_string(int fd, char* str, ...){
+    va_list args;
+    static char *buf = NULL;
+    static int bufsize = 0;
+    int strsize;
+
+    // Start with string length, increase later if needed
+    if (bufsize < strlen(str) + 1) {
+        bufsize = strlen(str) + 1;
+        buf = realloc(buf, bufsize);
+    }
+    while(1){
+        va_start(args, str);
+        strsize = vsnprintf(buf, bufsize, str, args);
+        va_end(args);
+
+        // If buffer was enough to fit entire string, send it
+        if (strsize <= bufsize) {
+            if (send_all(fd, buf, strsize) < 0) {
+                sendStringFailed = 1;
+            }
+            return 0;
+        }
+
+        // Try again with more space
+        bufsize = strsize + 1;
+        buf = realloc(buf, bufsize);
+    }
+}
+
 void handle_client(int fd) {
     struct pop_session* session = pop_session_create();
-    send_string(fd, "+OK POP3 server\n");
+    robust_send_string(fd, "+OK POP3 server\n");
     net_buffer_t buffer = nb_create(fd, 10000);
-    while(session->has_quit == 0){
+    while(session->has_quit == 0 && sendStringFailed == 0){
         char out[MAX_LINE_LENGTH];
         nb_read_line(buffer, out);
         handle_message(fd, session, out);
@@ -59,66 +92,66 @@ void handle_message(int fd, struct pop_session* session, char* buffer){
         if(session->is_authenticated > 0){
             handle_stat_command(fd, session, buffer);
         } else {
-            send_string(fd, "-ERR must be authenticated to use STAT command\n");
+            robust_send_string(fd, "-ERR must be authenticated to use STAT command\n");
         }
     }else if(strncasecmp(buffer, "LIST", 4) == 0){
         if(session->is_authenticated > 0){
             handle_list_command(fd, session, buffer);
         } else {
-            send_string(fd, "-ERR must be authenticated to use LIST command\n");
+            robust_send_string(fd, "-ERR must be authenticated to use LIST command\n");
         }
     } else if(strncasecmp(buffer, "RETR ", 5) == 0){
         if(session->is_authenticated > 0) {
             handle_retr_command(fd, session, buffer);
         } else {
-            send_string(fd, "-ERR must be authenticated to use RETR command\n");
+            robust_send_string(fd, "-ERR must be authenticated to use RETR command\n");
         }
     }else if(strncasecmp(buffer, "DELE ", 5) == 0){
         if(session->is_authenticated > 0){
             handle_dele_command(fd, session, buffer);
         } else {
-            send_string(fd, "-ERR must be authenticated to use DELE command\n");
+            robust_send_string(fd, "-ERR must be authenticated to use DELE command\n");
         }
     }else if(strncasecmp(buffer, "NOOP", 4) == 0){
         if(session->is_authenticated){
             handle_noop_command(fd, buffer);
         } else {
-            send_string(fd, "-ERR must be authenticated to use NOOP command\n");
+            robust_send_string(fd, "-ERR must be authenticated to use NOOP command\n");
         }
     }else if(strncasecmp(buffer, "RSET", 4) == 0){
         if(session->is_authenticated > 0){
             handle_rset_command(fd, session, buffer);
         } else {
-            send_string(fd, "-ERR must be authenticated to use RSET command\n");
+            robust_send_string(fd, "-ERR must be authenticated to use RSET command\n");
         }
     }else if(strncasecmp(buffer, "QUIT", 4) == 0){
         handle_quit_command(fd, session, buffer);
     } else {
-        send_string(fd, "-ERR Invalid command\n");
+        robust_send_string(fd, "-ERR Invalid command\n");
     }
 }
 
 void handle_user_command(int fd, struct pop_session* session, char* buffer) {
     if(session->is_authenticated > 0){
-        send_string(fd, "-ERR already logged in, please quit before issuing USER command\n");
+        robust_send_string(fd, "-ERR already logged in, please quit before issuing USER command\n");
     } else {
         char* bufCopy = strdup(buffer);
         strtok(bufCopy," ");     //ignore first word
         char* user_name = strtok(NULL, " ");
         if (isWord(user_name) == 0) {
-            send_string(fd, "-ERR no username supplied\n");
+            robust_send_string(fd, "-ERR no username supplied\n");
         } else {
             char* lineEnding = substr(buffer, (int)(5 + strlen(user_name)), 0);
             if(isLineEndingValid(lineEnding) == 1){
                 if (is_valid_user(user_name, NULL)) {
                     session->username = strdup(
                             user_name);       //use strdup to avoid rewriting of these variables when using strtok
-                    send_string(fd, "+OK valid username: %s \n", user_name);
+                    robust_send_string(fd, "+OK valid username: %s \n", user_name);
                 } else {
-                    send_string(fd, "-ERR invalid username\n");
+                    robust_send_string(fd, "-ERR invalid username\n");
                 }
             } else {
-                send_string(fd, "-ERR invalid input\n");
+                robust_send_string(fd, "-ERR invalid input\n");
             }
         }
     }
@@ -126,29 +159,29 @@ void handle_user_command(int fd, struct pop_session* session, char* buffer) {
 
 void handle_pass_command(int fd, struct pop_session* session, char* buffer) {
     if (session->is_authenticated > 0) {
-        send_string(fd, "-ERR already logged in, please quit before issuing PASS command\n");
+        robust_send_string(fd, "-ERR already logged in, please quit before issuing PASS command\n");
     } else {
         if (session->username == NULL) {
-            send_string(fd, "-ERR please specify a valid username first\n");
+            robust_send_string(fd, "-ERR please specify a valid username first\n");
         }
         else {
             char* bufCopy = strdup(buffer);
             strtok(bufCopy, " "); // Ignore first word
             char* password = strtok(NULL, " "); // Domain name is second word
             if(isWord(password) == 0) { //indicates no domain provided
-                send_string(fd, "500-Invalid syntax no password provided\n");
+                robust_send_string(fd, "500-Invalid syntax no password provided\n");
             } else {
                 char* lineEnding = substr(strdup(buffer), (int)(5 + strlen(password)), 0);
                 if(isLineEndingValid(lineEnding) == 1) {
                     if(is_valid_user(session->username, password) > 0) {
                         session->is_authenticated = 1;
                         session->messages = load_user_mail(session->username);
-                        send_string(fd, "+OK success, logged in as %s\n", session->username);
+                        robust_send_string(fd, "+OK success, logged in as %s\n", session->username);
                     } else {
-                        send_string(fd, "-ERR invalid password\n");
+                        robust_send_string(fd, "-ERR invalid password\n");
                     }
                 } else {
-                    send_string(fd, "500-Invalid Syntax Invalid Line Ending\n");
+                    robust_send_string(fd, "500-Invalid Syntax Invalid Line Ending\n");
                 }
             }
         }
@@ -158,10 +191,10 @@ void handle_pass_command(int fd, struct pop_session* session, char* buffer) {
 void handle_stat_command(int fd, struct pop_session* session, char* buffer){
     char* lineEnding = substr(strdup(buffer), 4, 0);
     if(isLineEndingValid(lineEnding) == 1) {
-        send_string(fd, "+OK %d message (%d octets)\n", get_mail_count(session->messages),
+        robust_send_string(fd, "+OK %d message (%d octets)\n", get_mail_count(session->messages),
                     (int) get_mail_list_size(session->messages));
     } else {
-        send_string(fd, "-ERR STAT command requries no additional parameters\n");
+        robust_send_string(fd, "-ERR STAT command requries no additional parameters\n");
     }
 }
 
@@ -169,23 +202,23 @@ void handle_list_command(int fd, struct pop_session* session, char* buffer){
     char* bufCopy = strdup(buffer);
     char* hasNoParam = substr(bufCopy, 4, 0);
     if(isLineEndingValid(hasNoParam)){
-        send_string(fd, "+OK %d message (%d octets)\n", get_mail_count(session->messages), (int)get_mail_list_size(session->messages));
+        robust_send_string(fd, "+OK %d message (%d octets)\n", get_mail_count(session->messages), (int)get_mail_list_size(session->messages));
         print_all_messages(fd, session->messages);
     } else {
         strtok(bufCopy, " "); // Ignore first word
         char* mail_index = strtok(NULL, " "); // mail_index is second word
         int mail_index_int = (int)(strtol(mail_index, NULL, 10) - 1);   //subtract 1 to revert back to 0 based indexing
         if(mail_index_int < 0){
-            send_string(fd, "-ERR mail index must be a positive number\n");
+            robust_send_string(fd, "-ERR mail index must be a positive number\n");
         } else {
             if (mail_index_int + 1 <= 0) {
-                send_string(fd, "-ERR mail index must be greater than 0\n");
+                robust_send_string(fd, "-ERR mail index must be greater than 0\n");
             } else {
                 mail_item_t mail_item = get_mail_item(session->messages, (unsigned int) mail_index_int);
                 if (mail_item) {
-                    send_string(fd, "+OK %d %d\n", mail_index_int + 1, (int) get_mail_item_size(mail_item));
+                    robust_send_string(fd, "+OK %d %d\n", mail_index_int + 1, (int) get_mail_item_size(mail_item));
                 } else {
-                    send_string(fd, "-ERR no such item\n");
+                    robust_send_string(fd, "-ERR no such item\n");
                 }
             }
         }
@@ -199,12 +232,12 @@ void print_all_messages(int fd, mail_list_t messages){
     while(non_deleted_messages <= total_messages){
         mail_item_t mail_item = get_mail_item(messages, (unsigned int)current_index);
         if(mail_item){
-            send_string(fd, "%d %d\n", current_index + 1, (int)get_mail_item_size(mail_item));
+            robust_send_string(fd, "%d %d\n", current_index + 1, (int)get_mail_item_size(mail_item));
             non_deleted_messages++;
         }
         current_index++;
     }
-    send_string(fd, ".\n");
+    robust_send_string(fd, ".\n");
 }
 
 void handle_dele_command(int fd, struct pop_session* session, char* buffer){
@@ -212,24 +245,24 @@ void handle_dele_command(int fd, struct pop_session* session, char* buffer){
     strtok(bufCopy, " "); // Ignore first word
     char* dele_index = strtok(NULL, " "); // delete index is second word
     if(isWord(dele_index) == 0){
-        send_string(fd, "-ERR no mail index supplied to delete\n");
+        robust_send_string(fd, "-ERR no mail index supplied to delete\n");
     } else {
         char* lineEnding = substr(buffer, (int)(5 + strlen(dele_index)), 0);
         if(isLineEndingValid(lineEnding) == 1) {
             int dele_index_int = atoi(dele_index) - 1;  //subtract 1 to use 0 based indexing
             if (dele_index_int + 1 <= 0) {
-                send_string(fd, "-ERR mail index must be greater than 0\n");
+                robust_send_string(fd, "-ERR mail index must be greater than 0\n");
             } else {
                 mail_item_t mail_item = get_mail_item(session->messages, (unsigned int) dele_index_int);
                 if (!mail_item) {
-                    send_string(fd, "-ERR no such item\n");
+                    robust_send_string(fd, "-ERR no such item\n");
                 } else {
                     mark_mail_item_deleted(mail_item);
-                    send_string(fd, "+OK marked item %d for deletion\n", dele_index_int + 1);
+                    robust_send_string(fd, "+OK marked item %d for deletion\n", dele_index_int + 1);
                 }
             }
         } else {
-            send_string(fd, "-ERR DELE command requires no additional parameters\n");
+            robust_send_string(fd, "-ERR DELE command requires no additional parameters\n");
         }
     }
 }
@@ -238,20 +271,20 @@ void handle_rset_command(int fd, struct pop_session* session, char* buffer){
     char* lineEnding = substr(strdup(buffer), 4, 0);
     if(isLineEndingValid(lineEnding) == 1){
         reset_mail_list_deleted_flag(session->messages);
-        send_string(fd, "+OK maildrop has %d messages (%d octets)\n",
+        robust_send_string(fd, "+OK maildrop has %d messages (%d octets)\n",
                     get_mail_count(session->messages),
                     (int)get_mail_list_size(session->messages));
     } else {
-        send_string(fd, "-ERR RSET command requires no additional parameters\n");
+        robust_send_string(fd, "-ERR RSET command requires no additional parameters\n");
     }
 }
 
 void handle_noop_command(int fd, char* buffer){
     char* lineEnding = substr(strdup(buffer), 4, 0);
     if(isLineEndingValid(lineEnding) == 1){
-        send_string(fd, "+OK\n");
+        robust_send_string(fd, "+OK\n");
     } else {
-        send_string(fd, "-ERR NOOP command requires no additional parameters\n");
+        robust_send_string(fd, "-ERR NOOP command requires no additional parameters\n");
     }
 }
 
@@ -262,9 +295,9 @@ void handle_quit_command(int fd, struct pop_session* session,  char* buffer){
             destroy_mail_list(session->messages);
         }
         session->has_quit = 1;
-        send_string(fd, "+OK pop server signing off\n");
+        robust_send_string(fd, "+OK pop server signing off\n");
     } else {
-        send_string(fd, "-ERR QUIT command requires no additional parameters\n");
+        robust_send_string(fd, "-ERR QUIT command requires no additional parameters\n");
     }
 }
 
@@ -273,25 +306,25 @@ void handle_retr_command(int fd, struct pop_session* session, char* buffer){
     strtok(bufCopy, " "); // Ignore first word
     char* mail_index = strtok(NULL, " "); // Domain name is second word
     if(isWord(mail_index) == 0){
-        send_string(fd, "-ERR no mail index supplied to retrieve\n");
+        robust_send_string(fd, "-ERR no mail index supplied to retrieve\n");
     } else {
         char* lineEnding = substr(buffer, (int)(5 + strlen(mail_index)), 0);
         if(isLineEndingValid(lineEnding) == 1) {
             int retr_index_int = atoi(mail_index) - 1;  //subtract 1 to use 0 based indexing
             if (retr_index_int + 1 <= 0) {
-                send_string(fd, "-ERR mail index must be a number greater than 0\n");
+                robust_send_string(fd, "-ERR mail index must be a number greater than 0\n");
             } else {
                 mail_item_t mail_item = get_mail_item(session->messages, (unsigned int) retr_index_int);
                 if (!mail_item) {
-                    send_string(fd, "-ERR no such item\n");
+                    robust_send_string(fd, "-ERR no such item\n");
                 } else {
                     const char *file_name = get_mail_item_filename(mail_item);
-                    send_string(fd, "+OK %d octets\n", (int) get_mail_item_size(mail_item));
+                    robust_send_string(fd, "+OK %d octets\n", (int) get_mail_item_size(mail_item));
                     read_mail_file(fd, session, file_name);
                 }
             }
         } else {
-            send_string(fd, "-ERR RETR command requires no additional parameters\n");
+            robust_send_string(fd, "-ERR RETR command requires no additional parameters\n");
         }
     }
 }
@@ -307,9 +340,9 @@ void read_mail_file(int fd, struct pop_session* session, const char* file_name){
             send_all(fd, buf, nread);
         }
         if(ferror(file)){
-            send_string(fd, "-ERR unable to read file\n");
+            robust_send_string(fd, "-ERR unable to read file\n");
         }
     }
     fclose(file);
-    send_string(fd, "\n.\n");
+    robust_send_string(fd, "\n.\n");
 }
