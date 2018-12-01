@@ -249,7 +249,7 @@ void handle_state_two(int fd, struct smtp_session* session, char* buffer) {
 
 void handle_state_three(int fd, struct smtp_session* session, char* buffer) {
     //Data collection state
-    if(strncasecmp(buffer, ".\n", 2) == 0){
+    if(strncasecmp(buffer, ".", 1) == 0){
         save_user_mail(session->tempFileName, session->recipients);
         close(session->tempFileFD);
         unlink(session->tempFileName);
