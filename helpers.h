@@ -6,6 +6,7 @@
 #include <stdlib.h>
 
 char* trimwhitespace(char *str);
+int endsWithNewline(char *str);
 int isLineEndingValid(char *str);
 char* substr (const char* string, int pos, int len);
 int isWord(char* str);

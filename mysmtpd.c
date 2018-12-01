@@ -51,9 +51,17 @@ void handle_client(int fd) {
 
     while(session->state >= 0){
         send_string(fd, "state is: %d\n", session->state);
-        char out[MAX_LINE_LENGTH];
-        nb_read_line(buffer, out);
-        handle_incoming_message(fd, session, out);
+        char out[MAX_LINE_LENGTH + 1];
+        if(nb_read_line(buffer, out) > 0) {
+            if(endsWithNewline(out) == 0) {
+                send_string(fd, "500 - Line Too Long");
+                session->state = -1;
+            } else {
+                handle_incoming_message(fd, session, out);
+            }
+        } else {
+            session->state = -1;
+        }
     }
     close(session->tempFileFD);
     unlink(session->tempFileName);
@@ -144,6 +152,8 @@ void handle_state_one(int fd, struct smtp_session* session, char* buffer){
             strtok(bufCopy, "<");
             char* recipient = strtok(NULL, ">");
             if(isWord(recipient) == 0){
+                // TODO: Check if 500 or 501
+                send_string(fd, "501-Invalid Argument: <Address> is empty\n");
                 return;
             }
             char* strInlcudingRightArrow = strchr(buffer, '>');
@@ -157,7 +167,7 @@ void handle_state_one(int fd, struct smtp_session* session, char* buffer){
                 send_string(fd, "500-Invalid Syntax: Invalid Line Ending\n");
         } else {
             // Mail provided without proper <Address>
-            send_string(fd, "500-Invalid Syntax: <Address> not formatted correctly\n");
+            send_string(fd, "501-Invalid Argument: <Address> not formatted correctly\n");
         }
     } else if(strncasecmp(buffer, "RCPT TO:<", 7) == 0){
         send_string(fd, "503 Bad Sequence of Commands\n");

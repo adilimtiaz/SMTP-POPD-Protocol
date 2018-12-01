@@ -30,6 +30,19 @@ char* trimwhitespace(char *str)
     return str;
 }
 
+int endsWithNewline(char* str){
+    // Check if last char of string is \n
+    int len = strlen(str);
+    // If string is 1 char long and last char is not \n
+    // Else lastChar of a string is not \n
+    // Then line not valid
+    if ((len == 1 && str[0] != '\n') &&
+        (str[len - 1] != '\n')) {
+        return 0;
+    }
+    return 1;
+}
+
 // Cuts trailing whitespace and then checks if a newline char is present at the end of the line.
 // If anything else is present in str, then it will return false
 // Modifies input String
