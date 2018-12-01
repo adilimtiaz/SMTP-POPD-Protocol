@@ -18,7 +18,7 @@ struct smtp_session* smtp_session_create(int recipientNum){
     session->tempFileFD = -1;
     session->recipients = create_user_list();
     session->serverDomainName = NULL;
-    char tmpFileName[] = "./mail.XXXXXX";
+    char tmpFileName[] = "../mail.XXXXXX";
     memcpy(session->tempFileName, tmpFileName, strlen(tmpFileName));
     return session;
 }
