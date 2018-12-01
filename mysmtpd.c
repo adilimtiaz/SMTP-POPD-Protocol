@@ -206,6 +206,7 @@ void handle_state_two(int fd, struct smtp_session* session, char* buffer) {
             char* strInlcudingRightArrow = strchr(buffer, '>');
             char* strAfterRightArrow = substr(strInlcudingRightArrow, 1, 0);
             if(isLineEndingValid(strAfterRightArrow) == 1){
+                send_string(fd, "Recipient: %s \n", recipient);
                 if (is_valid_user(recipient, NULL) > 0) {
                     addRecipient(session, recipient);
                     send_string(fd, "250 OK\n");
@@ -216,7 +217,8 @@ void handle_state_two(int fd, struct smtp_session* session, char* buffer) {
         } else {
             send_string(fd, "500-Invalid Syntax: <RECIPIENT not formatted correctly>\n");
         }
-    } else if (strcasecmp(buffer, "DATA") == 0) {
+    } else if (strncasecmp(buffer, "DATA", 4) == 0) {
+        //  TODO IF THERE ARE MORE SPACES
         if (session->recipients == 0) {
             send_string(fd, "554 No valid recipients\n");
         }
@@ -247,7 +249,7 @@ void handle_state_two(int fd, struct smtp_session* session, char* buffer) {
 
 void handle_state_three(int fd, struct smtp_session* session, char* buffer) {
     //Data collection state
-    if(strcasecmp(buffer, ".\n") == 0){
+    if(strncasecmp(buffer, ".\n", 2) == 0){
         save_user_mail(session->tempFileName, session->recipients);
         close(session->tempFileFD);
         unlink(session->tempFileName);
@@ -293,4 +295,3 @@ void handle_state_four(int fd, struct smtp_session* session, char* buffer) {
     }
     free(copyBuff);
 }
-
